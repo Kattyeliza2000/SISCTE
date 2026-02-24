@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Portal de Archivos — SISCTE</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<!--
+  ════════════════════════════════════════════════════════════
+  ✅ CONFIGURACIÓN COMPLETA — Solo pega tus credenciales Firebase
+  ════════════════════════════════════════════════════════════
+  Ya no necesitas Google Drive API ni credenciales extra.
+  Todo (auth, base de datos, archivos) va a Firebase.
+  ════════════════════════════════════════════════════════════
+-->
+
+<script>
+  /* ── FIREBASE CONFIG ── */
+  const FIREBASE_CONFIG = {
+    apiKey:            "AIzaSyCwOn3AxANGK1PtIEsJsM28YJv9UEqDu5U",
+    authDomain:        "siscte-30f1b.firebaseapp.com",
+    projectId:         "siscte-30f1b",
+    storageBucket:     "siscte-30f1b.firebasestorage.app",
+    messagingSenderId: "270864419518",
+    appId:             "1:270864419518:web:93ed773c0bc1ad5b6b6cef"
+  };
+
+  /* ── ADMINISTRADORES ── */
+  const ADMIN_EMAILS = [
+    "parametrosp.cte@gmail.com",
+    "iastudillol@unemi.edu.ec"
+  ];
+
+  /* ─── Estado global ─── */
+  let db, auth, storage, usuario = null;
+  let archivoSeleccionado = null;
+
+  /* ═══════════════════════════════════
+     FIREBASE INIT
+  ═══════════════════════════════════ */
+  async function initFirebase() {
+    const { initializeApp } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+    const { getFirestore, collection, addDoc, getDocs, doc, getDoc, setDoc, orderBy, query, deleteDoc }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
+    const { getStorage, ref, uploadBytesResumable, getDownloadURL, deleteObject }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js");
+
+    const app = initializeApp(FIREBASE_CONFIG);
+    db      = getFirestore(app);
+    auth    = getAuth(app);
+    storage = getStorage(app);
+
+    window._fb = {
+      collection, addDoc, getDocs, doc, getDoc, setDoc, orderBy, query, deleteDoc,
+      GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+      ref, uploadBytesResumable, getDownloadURL, deleteObject
+    };
+
+    onAuthStateChanged(auth, u => {
+      if (u) {
+        usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
+        actualizarNav();
+        if (esAdmin()) show('nb-admin'); else hide('nb-admin');
+        irSubir();
+      } else {
+        usuario = null;
+        actualizarNav();
+        ir('vista-login');
+      }
+    });
+  }
+
+  /* ═══════════════════════════════════
+     AUTH
+  ═══════════════════════════════════ */
+  async function login() {
+    try {
+      const provider = new window._fb.GoogleAuthProvider();
+      await window._fb.signInWithPopup(auth, provider);
+    } catch(e) { toast('Error al iniciar sesión: ' + e.message, 'err'); }
+  }
+
+  async function logout() {
+    try { await window._fb.signOut(auth); } catch(e) {}
+  }
+
+  const esAdmin = () =>
+    usuario && ADMIN_EMAILS.map(e => e.toLowerCase()).includes(usuario.email.toLowerCase());
+
+  /* ═══════════════════════════════════
+     DOM HELPERS
+  ═══════════════════════════════════ */
+  const $       = id => document.getElementById(id);
+  const show    = id => { const e=$(id); if(e) e.style.display='block'; };
+  const hide    = id => { const e=$(id); if(e) e.style.display='none';  };
+  const hideAll = () => ['vista-login','vista-subir','vista-exito','vista-admin'].forEach(hide);
+
+  function ir(v) {
+    hideAll(); show(v);
+    document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+    if (v==='vista-subir'||v==='vista-exito') $('nb-subir')?.classList.add('active');
+    if (v==='vista-admin') $('nb-admin')?.classList.add('active');
+  }
+
+  function toast(msg, tipo='ok') {
+    const t = $('toast');
+    t.textContent = msg;
+    t.className = `toast toast--${tipo} toast--on`;
+    clearTimeout(t._t);
+    t._t = setTimeout(() => t.className = 'toast', 3600);
+  }
+
+  function actualizarNav() {
+    if (usuario) {
+      $('nav-foto').src = usuario.foto || '';
+      $('nav-nombre').textContent = usuario.nombre?.split(' ')[0] || usuario.email;
+      show('nav-sesion'); hide('nav-guest');
+    } else {
+      hide('nav-sesion'); show('nav-guest'); hide('nb-admin');
+    }
+  }
+
+  function resetBtn() {
+    const btn = $('btn-enviar');
+    btn.disabled = false;
+    btn.textContent = 'Enviar archivo';
+  }
+
+  /* ═══════════════════════════════════
+     VISTA SUBIR
+  ═══════════════════════════════════ */
+  function irSubir() {
+    archivoSeleccionado = null;
+    $('dropzone').style.display = 'flex';
+    $('file-preview').style.display = 'none';
+    $('progress-wrap').style.display = 'none';
+    resetBtn();
+    $('up-foto').src           = usuario.foto || '';
+    $('up-nombre').textContent = usuario.nombre || '';
+    $('up-email').textContent  = usuario.email  || '';
+    ir('vista-subir');
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    initFirebase();
+
+    $('btn-google').addEventListener('click', login);
+    document.querySelectorAll('.btn-logout').forEach(b => b.addEventListener('click', logout));
+    $('nb-subir').addEventListener('click', () => usuario ? irSubir() : ir('vista-login'));
+    $('nb-admin').addEventListener('click', () => { if (esAdmin()) { ir('vista-admin'); cargarAdmin(); } });
+    $('btn-enviar-otro').addEventListener('click', irSubir);
+
+    const dz = $('dropzone');
+    dz.addEventListener('dragover',  e => { e.preventDefault(); dz.classList.add('dz-over'); });
+    dz.addEventListener('dragleave', ()  => dz.classList.remove('dz-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('dz-over');
+      if (e.dataTransfer.files[0]) seleccionar(e.dataTransfer.files[0]);
+    });
+    dz.addEventListener('click', () => $('file-input').click());
+    $('file-input').addEventListener('change', () => {
+      if ($('file-input').files[0]) seleccionar($('file-input').files[0]);
+    });
+    $('btn-cambiar').addEventListener('click', () => {
+      archivoSeleccionado = null;
+      $('file-preview').style.display = 'none';
+      $('dropzone').style.display = 'flex';
+    });
+    $('btn-enviar').addEventListener('click', enviarArchivo);
+  });
+
+  function seleccionar(f) {
+    const ext = f.name.split('.').pop().toLowerCase();
+    if (!['xlsx','xls'].includes(ext)) {
+      toast('Solo se aceptan archivos Excel (.xlsx o .xls)', 'err'); return;
+    }
+    archivoSeleccionado = f;
+    $('fp-nombre').textContent = f.name;
+    $('fp-peso').textContent   = (f.size / 1024).toFixed(1) + ' KB';
+    $('dropzone').style.display     = 'none';
+    $('file-preview').style.display = 'flex';
+  }
+
+  /* ═══════════════════════════════════
+     SUBIDA A FIREBASE STORAGE
+  ═══════════════════════════════════ */
+  async function enviarArchivo() {
+    if (!archivoSeleccionado) { toast('Selecciona un archivo primero', 'err'); return; }
+
+    const btn = $('btn-enviar');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner"></span> Subiendo...';
+
+    const ahora       = new Date();
+    const fechaTexto  = ahora.toLocaleDateString('es-EC', { timeZone:'America/Guayaquil', day:'2-digit', month:'long', year:'numeric' });
+    const horaTexto   = ahora.toLocaleTimeString('es-EC', { timeZone:'America/Guayaquil', hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    const slug        = usuario.nombre.replace(/\s+/g,'_');
+    const fechaSlug   = ahora.toISOString().slice(0,10);
+    const horaSlug    = ahora.toTimeString().slice(0,5).replace(':','-');
+    const nombreStorage = `entregas/${fechaSlug}/${slug}_${horaSlug}_${archivoSeleccionado.name}`;
+
+    try {
+      const storageRef  = window._fb.ref(storage, nombreStorage);
+      const uploadTask  = window._fb.uploadBytesResumable(storageRef, archivoSeleccionado);
+
+      /* Barra de progreso */
+      $('progress-wrap').style.display = 'block';
+
+      await new Promise((resolve, reject) => {
+        uploadTask.on('state_changed',
+          snap => {
+            const pct = Math.round((snap.bytesTransferred / snap.totalBytes) * 100);
+            $('progress-bar').style.width = pct + '%';
+            $('progress-txt').textContent = pct + '%';
+          },
+          err => reject(err),
+          () => resolve()
+        );
+      });
+
+      const downloadURL = await window._fb.getDownloadURL(uploadTask.snapshot.ref);
+
+      /* Guardar registro en Firestore */
+      await window._fb.addDoc(window._fb.collection(db, "entregas"), {
+        uid:            usuario.uid,
+        nombre:         usuario.nombre,
+        email:          usuario.email,
+        foto:           usuario.foto,
+        nombreArchivo:  archivoSeleccionado.name,
+        storagePath:    nombreStorage,
+        downloadURL,
+        tamanoKB:       +(archivoSeleccionado.size / 1024).toFixed(1),
+        fechaTexto,
+        horaTexto,
+        timestamp:      ahora.toISOString()
+      });
+
+      $('ex-nombre').textContent  = usuario.nombre;
+      $('ex-email').textContent   = usuario.email;
+      $('ex-archivo').textContent = archivoSeleccionado.name;
+      $('ex-fecha').textContent   = fechaTexto;
+      $('ex-hora').textContent    = horaTexto;
+      ir('vista-exito');
+
+    } catch(err) {
+      console.error(err);
+      toast('Error al subir: ' + err.message, 'err');
+      $('progress-wrap').style.display = 'none';
+      resetBtn();
+    }
+  }
+
+  /* ═══════════════════════════════════
+     PANEL ADMIN
+  ═══════════════════════════════════ */
+  async function cargarAdmin() {
+    $('tabla-body').innerHTML     = `<tr><td colspan="6" class="td-vacio">Cargando desde Firestore...</td></tr>`;
+    $('admin-personas').innerHTML = `<p class="cargando-txt">Cargando...</p>`;
+
+    try {
+      const q    = window._fb.query(
+        window._fb.collection(db, "entregas"),
+        window._fb.orderBy("timestamp", "desc")
+      );
+      const snap = await window._fb.getDocs(q);
+      const docs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+      const unicos = [...new Set(docs.map(d => d.email))];
+      $('st-total').textContent  = docs.length;
+      $('st-unicos').textContent = unicos.length;
+      $('st-ultimo').textContent = docs.length
+        ? `${docs[0].fechaTexto} · ${docs[0].horaTexto}`
+        : 'Sin entregas aún';
+
+      const porPersona = {};
+      docs.forEach(d => {
+        if (!porPersona[d.email]) porPersona[d.email] = { ...d, cant: 0 };
+        porPersona[d.email].cant++;
+      });
+
+      $('admin-personas').innerHTML = Object.values(porPersona)
+        .sort((a,b) => b.cant - a.cant)
+        .map(p => `
+          <div class="persona-row">
+            <img class="persona-foto" src="${p.foto || avatar(p.nombre)}" alt="">
+            <div class="persona-info">
+              <div class="persona-nombre">${p.nombre || '—'}</div>
+              <div class="persona-email">${p.email}</div>
+              <div class="persona-ultima">Último: ${p.fechaTexto} · ${p.horaTexto}</div>
+            </div>
+            <span class="persona-badge">${p.cant} archivo${p.cant>1?'s':''}</span>
+          </div>`).join('') || '<p class="cargando-txt">Sin entregas aún</p>';
+
+      $('tabla-body').innerHTML = docs.length === 0
+        ? `<tr><td colspan="6" class="td-vacio">No hay entregas aún</td></tr>`
+        : docs.map((d,i) => `
+            <tr>
+              <td class="td-n">${i+1}</td>
+              <td>
+                <div class="td-user">
+                  <img class="td-foto" src="${d.foto || avatar(d.nombre)}" alt="">
+                  <div>
+                    <div class="td-nombre">${d.nombre || '—'}</div>
+                    <div class="td-email">${d.email}</div>
+                  </div>
+                </div>
+              </td>
+              <td class="td-arch">
+                <a href="${d.downloadURL}" target="_blank" class="link-archivo" title="Descargar ${d.nombreArchivo}">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                  ${d.nombreArchivo}
+                </a>
+              </td>
+              <td class="td-peso">${d.tamanoKB} KB</td>
+              <td class="td-fecha">${d.fechaTexto}</td>
+              <td class="td-hora">${d.horaTexto}</td>
+            </tr>`).join('');
+
+      $('btn-excel').onclick = () => exportarExcel(docs);
+
+    } catch(e) {
+      console.error(e);
+      toast('Error al cargar: ' + e.message, 'err');
+    }
+  }
+
+  const avatar = nombre =>
+    `https://ui-avatars.com/api/?name=${encodeURIComponent(nombre)}&background=2563eb&color=fff`;
+
+  async function exportarExcel(docs) {
+    if (!window.XLSX) {
+      await new Promise((res,rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const filas = docs.map((d,i) => ({
+      '#': i+1, 'Nombre': d.nombre||'—', 'Correo': d.email,
+      'Archivo': d.nombreArchivo, 'Tamaño (KB)': d.tamanoKB,
+      'Fecha': d.fechaTexto, 'Hora': d.horaTexto,
+      'Descargar': d.downloadURL||'—'
+    }));
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(filas);
+    ws['!cols'] = [{wch:4},{wch:24},{wch:30},{wch:34},{wch:12},{wch:22},{wch:12},{wch:60}];
+    XLSX.utils.book_append_sheet(wb, ws, 'Entregas');
+    XLSX.writeFile(wb, `informe_entregas_${new Date().toISOString().slice(0,10)}.xlsx`);
+    toast('Informe Excel descargado ✓');
+  }
+</script>
+
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --blue:#2563eb;--blue-d:#1d4ed8;--blue-l:#eff6ff;--blue-m:#dbeafe;
+  --txt:#111827;--txt2:#6b7280;--txt3:#9ca3af;
+  --border:#e5e7eb;--bg:#f3f4f6;--white:#fff;
+  --green:#16a34a;--red:#dc2626;--r:10px;
+  --sh:0 1px 3px rgba(0,0,0,.08),0 1px 2px rgba(0,0,0,.05);
+  --shm:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -2px rgba(0,0,0,.05);
+  --shl:0 10px 15px -3px rgba(0,0,0,.08),0 4px 6px -2px rgba(0,0,0,.04);
+}
+body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.5;}
+nav{background:var(--white);border-bottom:1px solid var(--border);padding:0 2rem;height:58px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.nav-logo{display:flex;align-items:center;gap:8px;font-weight:700;font-size:15px;}
+.nav-logo-ico{width:30px;height:30px;background:var(--blue);border-radius:8px;display:flex;align-items:center;justify-content:center;}
+.nav-right{display:flex;align-items:center;gap:8px;}
+.nav-btn{background:transparent;color:var(--txt2);border:1px solid transparent;padding:6px 14px;border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+.nav-btn:hover{background:var(--bg);color:var(--txt);}
+.nav-btn.active{background:var(--blue-l);color:var(--blue);border-color:var(--blue-m);}
+.nav-foto{width:30px;height:30px;border-radius:50%;object-fit:cover;border:2px solid var(--blue-m);}
+.nav-nombre{font-size:13px;font-weight:600;}
+.btn-out{background:var(--white);color:var(--txt2);border:1px solid var(--border);padding:6px 14px;border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+.btn-out:hover{border-color:var(--red);color:var(--red);}
+main{display:flex;justify-content:center;padding:52px 16px 80px;min-height:calc(100vh - 58px);}
+.centro{display:flex;justify-content:center;width:100%;}
+.card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shm);padding:40px;width:100%;max-width:460px;animation:up .3s ease;}
+@keyframes up{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+.card-ico{width:54px;height:54px;background:var(--blue-l);border-radius:14px;display:flex;align-items:center;justify-content:center;margin:0 auto 16px;}
+.card h2{font-size:22px;font-weight:800;text-align:center;margin-bottom:8px;}
+.card-sub{font-size:13px;color:var(--txt2);text-align:center;margin-bottom:28px;line-height:1.6;}
+.btn-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:var(--white);color:var(--txt);border:1.5px solid var(--border);border-radius:var(--r);padding:12px 16px;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:var(--sh);}
+.btn-google:hover{border-color:#4285f4;box-shadow:0 2px 10px rgba(66,133,244,.2);}
+.info-box{display:flex;align-items:flex-start;gap:10px;background:var(--blue-l);border:1px solid var(--blue-m);border-radius:var(--r);padding:12px 14px;font-size:12px;color:#1e40af;margin-top:20px;line-height:1.5;}
+.user-bar{display:flex;align-items:center;gap:10px;background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:10px 14px;margin-bottom:20px;}
+.user-bar img{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid var(--blue-m);}
+.ub-nombre{font-size:13px;font-weight:600;}
+.ub-email{font-size:11px;color:var(--txt2);}
+#dropzone{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;border:2px dashed #d1d5db;border-radius:12px;padding:44px 20px;cursor:pointer;text-align:center;transition:all .2s;margin-bottom:16px;background:var(--bg);}
+#dropzone:hover,#dropzone.dz-over{border-color:var(--blue);background:var(--blue-l);}
+.dz-ico{width:46px;height:46px;background:var(--white);border:1px solid var(--border);border-radius:10px;display:flex;align-items:center;justify-content:center;box-shadow:var(--sh);}
+.dz-title{font-size:14px;font-weight:600;}
+.dz-sub{font-size:12px;color:var(--txt2);}
+.dz-tags{display:flex;gap:6px;margin-top:4px;}
+.dz-tag{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--txt2);}
+#file-input{display:none;}
+#file-preview{display:none;align-items:center;gap:12px;background:var(--blue-l);border:1px solid var(--blue-m);border-radius:var(--r);padding:12px 14px;margin-bottom:16px;}
+.fp-ico{width:38px;height:38px;background:var(--white);border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.fp-data{flex:1;min-width:0;}
+#fp-nombre{font-size:13px;font-weight:600;word-break:break-all;}
+#fp-peso{font-size:11px;color:var(--txt2);}
+#btn-cambiar{background:none;border:1px solid var(--border);color:var(--txt2);border-radius:7px;padding:5px 10px;font-family:'Inter',sans-serif;font-size:12px;font-weight:500;cursor:pointer;transition:all .15s;flex-shrink:0;}
+#btn-cambiar:hover{border-color:var(--red);color:var(--red);}
+/* Barra de progreso */
+#progress-wrap{display:none;margin-bottom:14px;}
+.progress-label{display:flex;justify-content:space-between;font-size:11px;color:var(--txt2);margin-bottom:6px;font-weight:600;}
+.progress-track{background:var(--bg);border:1px solid var(--border);border-radius:999px;height:8px;overflow:hidden;}
+#progress-bar{height:100%;width:0%;background:var(--blue);border-radius:999px;transition:width .2s;}
+.btn-primary{width:100%;background:var(--blue);color:#fff;border:none;border-radius:var(--r);padding:12px 16px;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;justify-content:center;gap:8px;}
+.btn-primary:hover:not(:disabled){background:var(--blue-d);box-shadow:0 2px 8px rgba(37,99,235,.3);}
+.btn-primary:disabled{opacity:.55;cursor:not-allowed;}
+.spinner{width:14px;height:14px;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;animation:spin .65s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+#vista-exito{display:none;}
+.exito-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shl);padding:48px 40px;width:100%;max-width:460px;text-align:center;animation:up .35s ease;}
+.exito-ico{width:64px;height:64px;background:var(--green);border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 20px;animation:pop .4s cubic-bezier(.34,1.56,.64,1);}
+@keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
+.exito-card h2{font-size:20px;font-weight:800;margin-bottom:8px;}
+.exito-card>p{font-size:13px;color:var(--txt2);margin-bottom:24px;}
+.exito-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:24px;text-align:left;}
+.exito-item{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;}
+.exito-item label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt3);display:block;margin-bottom:4px;}
+.exito-item span{font-size:13px;font-weight:600;word-break:break-all;}
+.exito-item.full{grid-column:1/-1;}
+.btn-otro{width:100%;background:var(--blue-l);color:var(--blue);border:1px solid var(--blue-m);border-radius:var(--r);padding:11px;font-family:'Inter',sans-serif;font-size:14px;font-weight:600;cursor:pointer;transition:all .15s;}
+.btn-otro:hover{background:var(--blue);color:#fff;}
+#vista-admin{display:none;}
+.admin-wrap{width:100%;max-width:1100px;animation:up .3s ease;}
+.admin-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;flex-wrap:wrap;gap:12px;}
+.admin-top h2{font-size:22px;font-weight:800;}
+.admin-top p{font-size:12px;color:var(--txt2);margin-top:3px;}
+.admin-acc{display:flex;gap:8px;flex-wrap:wrap;}
+.btn-excel{background:var(--blue-l);color:var(--blue);border:1px solid var(--blue-m);border-radius:var(--r);padding:9px 16px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .15s;display:flex;align-items:center;gap:6px;}
+.btn-excel:hover{background:var(--blue);color:#fff;}
+.btn-cerrar{background:var(--white);color:var(--txt2);border:1px solid var(--border);border-radius:var(--r);padding:9px 16px;font-family:'Inter',sans-serif;font-size:13px;font-weight:500;cursor:pointer;transition:all .15s;}
+.btn-cerrar:hover{border-color:var(--red);color:var(--red);}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:28px;}
+.stat{background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:var(--sh);padding:20px 24px;}
+.stat.full{grid-column:1/-1;}
+.stat-lbl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--txt2);margin-bottom:8px;}
+.stat-val{font-size:36px;font-weight:800;color:var(--blue);line-height:1;}
+.stat.full .stat-val{font-size:14px;font-weight:600;color:var(--txt);}
+.sec-title{font-size:13px;font-weight:700;color:var(--txt);margin-bottom:12px;}
+.panel{background:var(--white);border:1px solid var(--border);border-radius:12px;box-shadow:var(--sh);margin-bottom:20px;overflow:hidden;}
+.panel-body{padding:16px;}
+#admin-personas{display:flex;flex-direction:column;gap:8px;}
+.cargando-txt{color:var(--txt3);font-size:13px;text-align:center;padding:16px;}
+.persona-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border:1px solid var(--border);border-radius:var(--r);background:var(--bg);transition:background .15s;}
+.persona-row:hover{background:var(--blue-l);}
+.persona-foto{width:40px;height:40px;border-radius:50%;object-fit:cover;border:2px solid var(--blue-m);flex-shrink:0;}
+.persona-info{flex:1;min-width:0;}
+.persona-nombre{font-size:13px;font-weight:700;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.persona-email{font-size:12px;color:var(--txt2);}
+.persona-ultima{font-size:11px;color:var(--txt3);margin-top:1px;}
+.persona-badge{background:var(--blue);color:#fff;border-radius:20px;padding:4px 12px;font-size:12px;font-weight:700;flex-shrink:0;}
+table{width:100%;border-collapse:collapse;}
+th{background:var(--bg);padding:10px 14px;text-align:left;font-size:11px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--txt2);border-bottom:1px solid var(--border);white-space:nowrap;}
+td{padding:12px 14px;font-size:13px;border-bottom:1px solid var(--border);}
+tr:last-child td{border-bottom:none;}
+tbody tr:hover td{background:#fafafa;}
+.td-n{color:var(--txt3);font-size:12px;width:36px;}
+.td-user{display:flex;align-items:center;gap:10px;}
+.td-foto{width:32px;height:32px;border-radius:50%;object-fit:cover;flex-shrink:0;}
+.td-nombre{font-size:13px;font-weight:600;white-space:nowrap;}
+.td-email{font-size:11px;color:var(--txt2);}
+.td-arch{font-size:12px;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.td-peso{font-size:12px;color:var(--txt2);white-space:nowrap;}
+.td-fecha{font-size:12px;white-space:nowrap;color:var(--txt2);}
+.td-hora{font-size:12px;white-space:nowrap;font-weight:600;color:var(--txt2);}
+.td-vacio{text-align:center;color:var(--txt3);padding:32px;}
+.link-archivo{color:var(--blue);text-decoration:none;font-weight:500;display:flex;align-items:center;}
+.link-archivo:hover{text-decoration:underline;}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(80px);background:var(--white);border:1px solid var(--border);border-radius:999px;padding:10px 22px;font-size:13px;font-weight:600;box-shadow:var(--shl);z-index:999;transition:transform .3s cubic-bezier(.34,1.56,.64,1);pointer-events:none;white-space:nowrap;}
+.toast--on{transform:translateX(-50%) translateY(0);}
+.toast--ok{border-color:#bbf7d0;color:var(--green);}
+.toast--err{border-color:#fecaca;color:var(--red);}
+@media(max-width:640px){
+  .stats{grid-template-columns:1fr 1fr;}
+  .stat.full{grid-column:1/-1;}
+  nav{padding:0 1rem;}
+  .card,.exito-card{padding:28px 20px;}
+  .exito-grid{grid-template-columns:1fr;}
+  .admin-top{flex-direction:column;}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="nav-logo">
+    <div class="nav-logo-ico">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+        <polyline points="14 2 14 8 20 8"/>
+        <line x1="16" y1="13" x2="8" y2="13"/>
+        <line x1="16" y1="17" x2="8" y2="17"/>
+      </svg>
+    </div>
+    Portal de Archivos — SISCTE
+  </div>
+  <div class="nav-right">
+    <div id="nav-sesion" style="display:none;align-items:center;gap:8px;">
+      <button class="nav-btn active" id="nb-subir">Subir archivo</button>
+      <button class="nav-btn" id="nb-admin" style="display:none">Administración</button>
+      <img id="nav-foto" class="nav-foto" src="" alt="">
+      <span id="nav-nombre" class="nav-nombre"></span>
+      <button class="btn-out btn-logout">Salir</button>
+    </div>
+    <div id="nav-guest" style="display:flex;align-items:center;">
+      <span style="font-size:13px;color:var(--txt2);">Inicia sesión para continuar</span>
+    </div>
+  </div>
+</nav>
+
+<main>
+
+  <!-- LOGIN -->
+  <div class="centro" id="vista-login">
+    <div class="card">
+      <div class="card-ico">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+          <polyline points="17 8 12 3 7 8"/>
+          <line x1="12" y1="3" x2="12" y2="15"/>
+        </svg>
+      </div>
+      <h2>Bienvenido</h2>
+      <p class="card-sub">Inicia sesión con tu cuenta de Google para subir tu archivo. Tu nombre, correo, fecha y hora quedarán registrados automáticamente.</p>
+      <button class="btn-google" id="btn-google">
+        <svg width="18" height="18" viewBox="0 0 48 48">
+          <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C33.8 6.5 29.1 4.5 24 4.5 12.7 4.5 3.5 13.7 3.5 25S12.7 45.5 24 45.5c11 0 20.5-8 20.5-20.5 0-1.4-.1-2.7-.4-3.5z"/>
+          <path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.6 15.1 19 12 24 12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C33.8 6.5 29.1 4.5 24 4.5c-7.7 0-14.3 4.4-17.7 10.2z"/>
+          <path fill="#4CAF50" d="M24 45.5c5 0 9.6-1.9 13.1-5l-6.1-5.1C29.1 37 26.6 38 24 38c-5.2 0-9.6-2.9-11.3-7.1l-6.5 5C9.6 41 16.4 45.5 24 45.5z"/>
+          <path fill="#1976D2" d="M43.6 20H24v8h11.3c-.8 2.3-2.3 4.2-4.2 5.6l6.1 5.1C40.7 35.4 44 30.6 44 25c0-1.4-.1-2.7-.4-3.5z"/>
+        </svg>
+        Acceder con Google
+      </button>
+      <div class="info-box">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <span>Cualquier cuenta de Google válida puede ingresar y subir archivos. Google verifica tu identidad automáticamente.</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- SUBIR -->
+  <div class="centro" id="vista-subir">
+    <div class="card">
+      <h2 style="font-size:18px;margin-bottom:16px">Subir archivo Excel</h2>
+      <div class="user-bar">
+        <img id="up-foto" src="" alt="">
+        <div>
+          <div class="ub-nombre" id="up-nombre"></div>
+          <div class="ub-email"  id="up-email"></div>
+        </div>
+      </div>
+      <div id="dropzone">
+        <div class="dz-ico">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        </div>
+        <div class="dz-title">Arrastra tu archivo aquí</div>
+        <div class="dz-sub">o haz clic para seleccionar desde tu dispositivo</div>
+        <div class="dz-tags">
+          <span class="dz-tag">.xlsx</span>
+          <span class="dz-tag">.xls</span>
+        </div>
+      </div>
+      <input type="file" id="file-input" accept=".xlsx,.xls">
+      <div id="file-preview">
+        <div class="fp-ico">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+        </div>
+        <div class="fp-data">
+          <div id="fp-nombre"></div>
+          <div id="fp-peso"></div>
+        </div>
+        <button id="btn-cambiar">Cambiar</button>
+      </div>
+
+      <!-- Barra de progreso -->
+      <div id="progress-wrap">
+        <div class="progress-label">
+          <span>Subiendo archivo...</span>
+          <span id="progress-txt">0%</span>
+        </div>
+        <div class="progress-track">
+          <div id="progress-bar"></div>
+        </div>
+      </div>
+
+      <button class="btn-primary" id="btn-enviar">Enviar archivo</button>
+    </div>
+  </div>
+
+  <!-- ÉXITO -->
+  <div class="centro" id="vista-exito">
+    <div class="exito-card">
+      <div class="exito-ico">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+      <h2>¡Archivo enviado!</h2>
+      <p>Tu entrega quedó guardada en Firebase Storage y registrada en Firestore.</p>
+      <div class="exito-grid">
+        <div class="exito-item full"><label>Enviado por</label><span id="ex-nombre"></span></div>
+        <div class="exito-item full"><label>Correo</label><span id="ex-email"></span></div>
+        <div class="exito-item full"><label>Archivo</label><span id="ex-archivo"></span></div>
+        <div class="exito-item"><label>Fecha</label><span id="ex-fecha"></span></div>
+        <div class="exito-item"><label>Hora</label><span id="ex-hora"></span></div>
+      </div>
+      <button class="btn-otro" id="btn-enviar-otro">Enviar otro archivo</button>
+    </div>
+  </div>
+
+  <!-- ADMIN -->
+  <div class="centro" id="vista-admin">
+    <div class="admin-wrap">
+      <div class="admin-top">
+        <div>
+          <h2>Panel de administración</h2>
+          <p>Registro de entregas · Firebase Storage + Firestore</p>
+        </div>
+        <div class="admin-acc">
+          <button class="btn-excel" id="btn-excel">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Exportar informe Excel
+          </button>
+          <button class="btn-cerrar btn-logout">Cerrar sesión</button>
+        </div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-lbl">Total archivos recibidos</div><div class="stat-val" id="st-total">—</div></div>
+        <div class="stat"><div class="stat-lbl">Personas que enviaron</div><div class="stat-val" id="st-unicos">—</div></div>
+        <div class="stat full"><div class="stat-lbl">Último envío recibido</div><div class="stat-val" id="st-ultimo">—</div></div>
+      </div>
+
+      <div class="sec-title">Quiénes enviaron archivos</div>
+      <div class="panel" style="margin-bottom:20px">
+        <div class="panel-body">
+          <div id="admin-personas"><p class="cargando-txt">Cargando...</p></div>
+        </div>
+      </div>
+
+      <div class="sec-title">Todos los archivos recibidos</div>
+      <div class="panel">
+        <div style="overflow-x:auto">
+          <table>
+            <thead>
+              <tr><th>#</th><th>Quien envió</th><th>Archivo</th><th>Peso</th><th>Fecha</th><th>Hora</th></tr>
+            </thead>
+            <tbody id="tabla-body">
+              <tr><td colspan="6" class="td-vacio">Cargando datos...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</main>
+
+<div class="toast" id="toast"></div>
+
+</body>
+</html>
