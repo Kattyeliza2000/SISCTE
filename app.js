@@ -49,9 +49,9 @@ const FIREBASE_CONFIG = {
    4. Account → API Keys → Public Key
 ──────────────────────────────────────────────────────── */
 const EMAILJS_CONFIG = {
-  publicKey:  "TU_PUBLIC_KEY_EMAILJS",
-  serviceId:  "TU_SERVICE_ID",
-  templateId: "TU_TEMPLATE_ID"
+  publicKey:  "gaScEoguCEcx7aFYT",
+  serviceId:  "service_ybvnh3i",
+  templateId: "template_8d6u82j"
 };
 
 /* Archivos menores a este umbral van a Firestore comprimido */
