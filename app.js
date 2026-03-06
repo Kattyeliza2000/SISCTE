@@ -638,15 +638,19 @@ async function exportarExcel(docs, filtrado=false){
     });
   }
   const filas = docs.map((d,i)=>({
-    '#':i+1,'Nombre':d.nombre||'—','Correo':d.email,
-    'Área':d.area||'—','Archivo':d.nombreArchivo,
-    'Tamaño':d.tamanoTexto||'—',
-    'Fecha':d.fechaTexto,'Hora':d.horaTexto,
+    '#':i+1,
+    'Nombre':d.nombre||'—',
+    'Correo':d.email||'—',
+    'Área':d.area||'—',
+    'Archivo':d.nombreArchivo||'—',
+    'Peso':d.tamanoTexto||'—',
+    'Fecha':d.fechaTexto||'—',
+    'Hora':d.horaTexto||'—',
     'Estado':d.archivado?'ARCHIVADO':'Activo'
   }));
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.json_to_sheet(filas);
-  ws['!cols']=[{wch:4},{wch:26},{wch:32},{wch:22},{wch:36},{wch:14},{wch:22},{wch:12},{wch:12}];
+  ws['!cols']=[{wch:4},{wch:28},{wch:34},{wch:22},{wch:38},{wch:12},{wch:22},{wch:14},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`informe_SISCTE${filtrado?'_filtrado':'_completo'}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast(`Informe${filtrado?' filtrado':''} descargado ✓`);
