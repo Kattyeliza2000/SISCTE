@@ -41,8 +41,7 @@ nav{background:var(--white);border-bottom:1px solid var(--border);height:48px;pa
 /* ══════════════════════════════
    VISTA LOGIN — centrada
 ══════════════════════════════ */
-.vista-login-wrap{
-  display:flex;
+#vista-login{
   flex-direction:column;
   align-items:center;
   justify-content:center;
@@ -363,7 +362,8 @@ tbody tr:hover td{background:#fafafa;}
   .page-body-wide{padding:0 10px 40px;}
 
   /* Login */
-  .vista-login-wrap{padding:20px 12px;justify-content:flex-start;padding-top:32px;}
+  .vista-login-wrap{padding:20px 12px;}
+  #vista-login{padding:20px 12px;justify-content:center;}
   .login-hero-ico{width:50px;height:50px;}
   .login-titulo{font-size:20px;}
   .login-card{padding:20px 16px;border-radius:12px;}
