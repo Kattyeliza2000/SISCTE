@@ -37,7 +37,7 @@
 
 <main>
 
-  <!-- LOGIN -->
+  <!-- ═══════════ LOGIN ═══════════ -->
   <div class="centro" id="vista-login">
     <div class="card">
       <div class="card-ico">
@@ -48,7 +48,7 @@
         </svg>
       </div>
       <h2>Bienvenido</h2>
-      <p class="card-sub">Inicia sesión con tu cuenta de Google para subir tu archivo. Tu nombre, correo, fecha y hora quedarán registrados automáticamente.</p>
+      <p class="card-sub">Inicia sesión con tu cuenta de Google para subir tu archivo Excel. Tu nombre, correo, área, fecha y hora quedarán registrados automáticamente.</p>
       <button class="btn-google" id="btn-google">
         <svg width="18" height="18" viewBox="0 0 48 48">
           <path fill="#FFC107" d="M43.6 20H24v8h11.3C33.6 33.1 29.3 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3 0 5.7 1.1 7.8 2.9l5.7-5.7C33.8 6.5 29.1 4.5 24 4.5 12.7 4.5 3.5 13.7 3.5 25S12.7 45.5 24 45.5c11 0 20.5-8 20.5-20.5 0-1.4-.1-2.7-.4-3.5z"/>
@@ -60,15 +60,17 @@
       </button>
       <div class="info-box">
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        <span>Cualquier cuenta de Google válida puede ingresar y subir archivos. Google verifica tu identidad automáticamente.</span>
+        <span>Cualquier cuenta de Google válida puede ingresar. Al enviar, recibirás un correo automático de confirmación como respaldo de tu entrega.</span>
       </div>
     </div>
   </div>
 
-  <!-- SUBIR -->
+  <!-- ═══════════ SUBIR ═══════════ -->
   <div class="centro" id="vista-subir">
-    <div class="card">
+    <div class="card card-upload">
       <h2 style="font-size:18px;margin-bottom:16px">Subir archivo Excel</h2>
+
+      <!-- Barra de usuario -->
       <div class="user-bar">
         <img id="up-foto" src="" alt="">
         <div>
@@ -76,6 +78,20 @@
           <div class="ub-email"  id="up-email"></div>
         </div>
       </div>
+
+      <!-- ── Selector de Área ── -->
+      <div class="field-group">
+        <label class="field-label" for="area-select">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
+          Área <span class="req">*</span>
+        </label>
+        <select id="area-select" class="field-select">
+          <option value="">— Selecciona tu área —</option>
+        </select>
+        <div class="field-hint">Selecciona el área organizacional a la que pertenece este archivo.</div>
+      </div>
+
+      <!-- Dropzone -->
       <div id="dropzone">
         <div class="dz-ico">
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -86,8 +102,10 @@
           <span class="dz-tag">.xlsx</span>
           <span class="dz-tag">.xls</span>
         </div>
+        <div class="dz-limit">Soporta archivos Excel de cualquier tamaño (hasta 5 GB vía Firebase Storage)</div>
       </div>
       <input type="file" id="file-input" accept=".xlsx,.xls">
+
       <div id="file-preview">
         <div class="fp-ico">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
@@ -102,40 +120,51 @@
       <!-- Barra de progreso -->
       <div id="progress-wrap">
         <div class="progress-label">
-          <span>Subiendo archivo...</span>
+          <span>Subiendo a Firebase Storage...</span>
           <span id="progress-txt">0%</span>
         </div>
         <div class="progress-track">
           <div id="progress-bar"></div>
         </div>
+        <div class="progress-hint">El progreso es en tiempo real. No cierres esta ventana.</div>
       </div>
 
-      <button class="btn-primary" id="btn-enviar">Enviar archivo</button>
+      <button class="btn-primary" id="btn-enviar">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        Enviar archivo
+      </button>
     </div>
   </div>
 
-  <!-- ÉXITO -->
+  <!-- ═══════════ ÉXITO ═══════════ -->
   <div class="centro" id="vista-exito">
     <div class="exito-card">
       <div class="exito-ico">
         <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
       </div>
       <h2>¡Archivo enviado!</h2>
-      <p>Tu entrega quedó guardada en Firebase Storage y registrada en Firestore.</p>
+      <p>Tu entrega quedó guardada en Firebase Storage y registrada en Firestore. Revisa tu correo para el comprobante.</p>
       <div class="exito-grid">
         <div class="exito-item full"><label>Enviado por</label><span id="ex-nombre"></span></div>
         <div class="exito-item full"><label>Correo</label><span id="ex-email"></span></div>
+        <div class="exito-item full"><label>Área</label><span id="ex-area"></span></div>
         <div class="exito-item full"><label>Archivo</label><span id="ex-archivo"></span></div>
         <div class="exito-item"><label>Fecha</label><span id="ex-fecha"></span></div>
         <div class="exito-item"><label>Hora</label><span id="ex-hora"></span></div>
+      </div>
+      <div class="exito-correo-aviso">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;margin-top:1px"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Se envió un correo de confirmación a tu cuenta como respaldo de esta entrega.
       </div>
       <button class="btn-otro" id="btn-enviar-otro">Enviar otro archivo</button>
     </div>
   </div>
 
-  <!-- ADMIN -->
+  <!-- ═══════════ ADMIN ═══════════ -->
   <div class="centro" id="vista-admin">
     <div class="admin-wrap">
+
+      <!-- Cabecera -->
       <div class="admin-top">
         <div>
           <h2>Panel de administración</h2>
@@ -144,18 +173,66 @@
         <div class="admin-acc">
           <button class="btn-excel" id="btn-excel">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Exportar informe Excel
+            Exportar todo
+          </button>
+          <button class="btn-excel btn-excel-filtrado" id="btn-excel-filtrado">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            Exportar filtrado
           </button>
           <button class="btn-cerrar btn-logout">Cerrar sesión</button>
         </div>
       </div>
 
+      <!-- Stats -->
       <div class="stats">
         <div class="stat"><div class="stat-lbl">Total archivos recibidos</div><div class="stat-val" id="st-total">—</div></div>
         <div class="stat"><div class="stat-lbl">Personas que enviaron</div><div class="stat-val" id="st-unicos">—</div></div>
         <div class="stat full"><div class="stat-lbl">Último envío recibido</div><div class="stat-val" id="st-ultimo">—</div></div>
       </div>
 
+      <!-- ══ PANEL DE FILTROS ══ -->
+      <div class="filtros-panel">
+        <div class="filtros-titulo">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Filtros de búsqueda
+        </div>
+        <div class="filtros-grid">
+          <div class="filtro-campo">
+            <label>Área</label>
+            <select id="filtro-area" class="field-select field-select-sm">
+              <option value="">Todas las áreas</option>
+            </select>
+          </div>
+          <div class="filtro-campo">
+            <label>Nombre</label>
+            <input id="filtro-nombre" type="text" placeholder="Buscar por nombre..." class="filtro-input">
+          </div>
+          <div class="filtro-campo">
+            <label>Correo</label>
+            <input id="filtro-email" type="text" placeholder="Buscar por correo..." class="filtro-input">
+          </div>
+          <div class="filtro-campo">
+            <label>Fecha desde</label>
+            <input id="filtro-fecha-desde" type="date" class="filtro-input">
+          </div>
+          <div class="filtro-campo">
+            <label>Fecha hasta</label>
+            <input id="filtro-fecha-hasta" type="date" class="filtro-input">
+          </div>
+        </div>
+        <div class="filtros-acciones">
+          <span id="filtro-resultado" class="filtro-resultado"></span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-filtrar" id="btn-filtrar">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              Aplicar filtros
+            </button>
+            <button class="btn-limpiar" id="btn-limpiar">Limpiar</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Personas -->
       <div class="sec-title">Quiénes enviaron archivos</div>
       <div class="panel" style="margin-bottom:20px">
         <div class="panel-body">
@@ -163,28 +240,35 @@
         </div>
       </div>
 
+      <!-- Tabla -->
       <div class="sec-title">Todos los archivos recibidos</div>
       <div class="panel">
         <div style="overflow-x:auto">
           <table>
             <thead>
-              <tr><th>#</th><th>Quien envió</th><th>Archivo</th><th>Peso</th><th>Fecha</th><th>Hora</th></tr>
+              <tr>
+                <th>#</th>
+                <th>Quien envió</th>
+                <th>Área</th>
+                <th>Archivo</th>
+                <th>Peso</th>
+                <th>Fecha</th>
+                <th>Hora</th>
+              </tr>
             </thead>
             <tbody id="tabla-body">
-              <tr><td colspan="6" class="td-vacio">Cargando datos...</td></tr>
+              <tr><td colspan="7" class="td-vacio">Cargando datos...</td></tr>
             </tbody>
           </table>
         </div>
       </div>
+
     </div>
   </div>
 
 </main>
 
 <div class="toast" id="toast"></div>
-
-<!-- Script al final del body para que el DOM esté listo -->
 <script type="module" src="app.js"></script>
-
 </body>
 </html>
