@@ -156,7 +156,11 @@ const hide    = id => { const e=$(id); if(e) e.style.display='none'; };
 const hideAll = () => ['vista-login','vista-subir','vista-exito','vista-admin'].forEach(hide);
 
 function ir(v) {
-  hideAll(); show(v);
+  hideAll(); 
+  // vista-login necesita flex para centrado, las demás usan block
+  const el = $(v);
+  if (!el) return;
+  el.style.display = (v === 'vista-login') ? 'flex' : 'block';
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   if (v==='vista-subir'||v==='vista-exito') $('nb-subir')?.classList.add('active');
   if (v==='vista-admin') $('nb-admin')?.classList.add('active');
