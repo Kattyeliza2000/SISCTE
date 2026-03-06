@@ -33,14 +33,23 @@ nav{background:var(--white);border-bottom:1px solid var(--border);height:48px;pa
 /* ══════════════════════════════
    VISTAS
 ══════════════════════════════ */
-.vista{min-height:calc(100vh - 48px);}
+.vista{}
+#app{display:block;}
 @keyframes up{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pop{from{transform:scale(0)}to{transform:scale(1)}}
 
 /* ══════════════════════════════
    VISTA LOGIN — centrada
 ══════════════════════════════ */
-.vista-login-wrap{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px 16px;background:var(--bg);}
+.vista-login-wrap{
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  min-height:calc(100vh - 48px);
+  padding:40px 16px;
+  background:var(--bg);
+}
 .login-hero{text-align:center;margin-bottom:28px;animation:up .3s ease;}
 .login-hero-ico{width:60px;height:60px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 8px 20px rgba(37,99,235,.3);}
 .login-titulo{font-size:24px;font-weight:800;color:var(--txt);}
@@ -272,19 +281,161 @@ tbody tr:hover td{background:#fafafa;}
 .toast--err{border-color:#fecaca;color:var(--red);}
 
 /* ══════════════════════════════
-   RESPONSIVE
+   RESPONSIVE — TABLET  ≤ 1024px
 ══════════════════════════════ */
-@media(max-width:900px){
+@media(max-width:1024px){
+  .page-body-wide{padding:0 16px 60px;}
   .stats-row{grid-template-columns:1fr 1fr;}
   .stat-box-wide{grid-column:1/-1;}
+  .filtros-grid{grid-template-columns:repeat(3,1fr);}
 }
-@media(max-width:640px){
-  nav{padding:0 12px;}
-  .page-hero{padding:24px 16px 32px;}
-  .page-hero-titulo{font-size:18px;}
-  .exito-datos{grid-template-columns:1fr;}
-  .admin-acc{flex-wrap:wrap;}
+
+/* ══════════════════════════════
+   RESPONSIVE — TABLET  ≤ 768px
+══════════════════════════════ */
+@media(max-width:768px){
+  /* Nav */
+  nav{padding:0 14px;height:52px;}
+  .nav-nombre{display:none;}           /* oculta nombre, deja foto */
+  .nav-brand{font-size:12px;}
+
+  /* Hero */
+  .page-hero{padding:24px 16px 36px;}
+  .page-hero-titulo{font-size:19px;}
+  .page-hero-sub{font-size:12px;}
+
+  /* Body */
+  .page-body{padding:0 12px 48px;}
+  .page-body-wide{padding:0 12px 48px;}
+
+  /* Card envío */
+  .envio-card{padding:18px;}
+
+  /* Stats */
+  .stats-row{grid-template-columns:1fr 1fr;}
+  .stat-box-wide{grid-column:1/-1;}
+  .stat-val{font-size:26px;}
+
+  /* Filtros */
   .filtros-grid{grid-template-columns:1fr 1fr;}
+  .filtros-panel{padding:14px;}
+
+  /* Admin acciones */
+  .admin-top{flex-direction:column;align-items:stretch;}
+  .admin-acc{flex-wrap:wrap;gap:6px;}
+  .btn-acc{font-size:11px;padding:7px 10px;}
+
+  /* Tabla: scroll horizontal ya está, pero reducimos padding */
+  th,td{padding:8px 10px;}
+
+  /* Éxito */
+  .exito-card{padding:24px 18px;}
+  .exito-datos{grid-template-columns:1fr;}
+  .exito-row.full{grid-column:auto;}
+
+  /* Login */
+  .login-card{padding:24px 20px;}
+  .vista-login-wrap{padding:24px 14px;}
+
+  /* Modal */
+  .modal-card{max-width:100%;margin:8px;}
+}
+
+/* ══════════════════════════════
+   RESPONSIVE — MÓVIL  ≤ 480px
+══════════════════════════════ */
+@media(max-width:480px){
+  /* Nav compacto */
+  nav{padding:0 12px;height:50px;}
+  .nav-brand{display:none;}            /* solo ícono en móvil */
+  .nav-btn{padding:5px 8px;font-size:11px;}
+  .nav-salir span{display:none;}       /* solo ícono salir */
+  .nav-salir{padding:5px 8px;}
+
+  /* Hero */
+  .page-hero{padding:20px 12px 32px;}
+  .page-hero-titulo{font-size:17px;}
+  .page-hero-sub{font-size:11px;}
+  .page-hero::after{height:18px;}
+
+  /* Body */
+  .page-body{padding:0 10px 40px;}
+  .page-body-wide{padding:0 10px 40px;}
+
+  /* Login */
+  .vista-login-wrap{padding:20px 12px;justify-content:flex-start;padding-top:32px;}
+  .login-hero-ico{width:50px;height:50px;}
+  .login-titulo{font-size:20px;}
+  .login-card{padding:20px 16px;border-radius:12px;}
+  .login-card h2{font-size:16px;}
+  .btn-google{font-size:13px;padding:11px 14px;}
+
+  /* Card envío */
+  .envio-card{padding:14px;border-radius:10px;}
+  .envio-card-header{gap:8px;margin-bottom:16px;padding-bottom:12px;}
+  .envio-card-titulo{font-size:13px;}
+  .form-textarea{font-size:14px;}       /* evita zoom en iOS */
+  .form-select{font-size:14px;}         /* evita zoom en iOS */
+
+  /* Dropzone */
+  .dropzone{padding:20px 12px;}
+  .dz-label{font-size:12px;}
+
+  /* Botón registrar */
+  .btn-registrar{font-size:14px;padding:13px;}
+
+  /* Mis envíos */
+  .mis-envios-sep{font-size:12px;}
+  .mis-envio-item{padding:10px 12px;}
+
+  /* Stats — 1 columna */
   .stats-row{grid-template-columns:1fr;}
   .stat-box-wide{grid-column:auto;}
+  .stat-val{font-size:28px;}
+
+  /* Filtros — 1 columna */
+  .filtros-grid{grid-template-columns:1fr;}
+  .filtros-footer{flex-direction:column;align-items:stretch;}
+  .filtros-footer > div{display:flex;gap:8px;}
+  .btn-filtrar,.btn-limpiar{flex:1;text-align:center;justify-content:center;}
+
+  /* Admin botones */
+  .admin-acc{gap:6px;}
+  .btn-acc{flex:1;justify-content:center;font-size:11px;padding:8px 6px;}
+
+  /* Personas */
+  .persona-badge{padding:2px 8px;font-size:10px;}
+  .persona-ultima{display:none;}       /* simplifica en móvil */
+
+  /* Tabla */
+  th,td{padding:7px 8px;font-size:11px;}
+  .td-n{width:24px;}
+  .td-email{display:none;}             /* oculta email en tabla móvil */
+
+  /* Éxito */
+  .exito-card{padding:20px 14px;}
+  .exito-ico{width:52px;height:52px;}
+  .exito-titulo{font-size:16px;}
+  .exito-datos{gap:6px;}
+
+  /* Modal */
+  .modal-overlay{padding:8px;}
+  .modal-card{border-radius:12px;margin:0;}
+  .modal-header{padding:14px 16px 12px;}
+  .modal-body{padding:14px 16px;}
+  .modal-footer{flex-direction:column;gap:6px;}
+  .btn-modal-cancel,.btn-modal-primary,.btn-modal-danger{width:100%;justify-content:center;text-align:center;}
+
+  /* Toast */
+  .toast{font-size:11px;padding:8px 16px;max-width:calc(100vw - 32px);white-space:normal;text-align:center;}
+}
+
+/* ══════════════════════════════
+   TOUCH — evita zoom en inputs iOS
+══════════════════════════════ */
+@media(hover:none) and (pointer:coarse){
+  .form-textarea,.form-select,.filtro-input,.filtro-select{font-size:16px;}
+  .btn-registrar,.btn-google,.btn-acc,.btn-modal-primary,.btn-modal-danger{
+    min-height:44px; /* área táctil mínima recomendada */
+  }
 }
