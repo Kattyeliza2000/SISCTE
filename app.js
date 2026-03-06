@@ -641,13 +641,12 @@ async function exportarExcel(docs, filtrado=false){
     '#':i+1,'Nombre':d.nombre||'—','Correo':d.email,
     'Área':d.area||'—','Archivo':d.nombreArchivo,
     'Tamaño':d.tamanoTexto||'—',
-    'Almacenamiento':d.metodo==='firestore_comprimido'?'Firestore/Gzip':'Firebase Storage',
-    'URL Descarga':d.storageURL||'(Firestore)','Fecha':d.fechaTexto,'Hora':d.horaTexto,
+    'Fecha':d.fechaTexto,'Hora':d.horaTexto,
     'Estado':d.archivado?'ARCHIVADO':'Activo'
   }));
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.json_to_sheet(filas);
-  ws['!cols']=[{wch:4},{wch:26},{wch:32},{wch:22},{wch:36},{wch:14},{wch:20},{wch:50},{wch:22},{wch:12},{wch:12}];
+  ws['!cols']=[{wch:4},{wch:26},{wch:32},{wch:22},{wch:36},{wch:14},{wch:22},{wch:12},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`informe_SISCTE${filtrado?'_filtrado':'_completo'}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast(`Informe${filtrado?' filtrado':''} descargado ✓`);
