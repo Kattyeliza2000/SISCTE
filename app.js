@@ -645,82 +645,136 @@ function obtenerTokenDrive(forzarNuevo = false) {
   });
 }
 
-/* NO CREAR CARPETAS - Subir archivos directamente a raíz de Google Drive */
+/* Crear subcarpeta - DEBE funcionar o lanzar error */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
-  // Esta función ahora solo retorna 'root' 
-  // No intenta crear carpetas que causan problemas
-  console.log(`📁 Usando raíz de Google Drive (sin subcarpetas)`);
-  return 'root';
-}
-
-/* Sube el archivo DIRECTAMENTE a raíz de Google Drive */
-async function subirAGoogleDrive(archivo, onProgress) {
-  console.log('═══════════════════════════════════');
-  console.log('INICIANDO SUBIDA A GOOGLE DRIVE');
-  console.log('═══════════════════════════════════');
+  console.log(`\n📁 CREANDO/BUSCANDO CARPETA: ${nombreArea}\n`);
   
   try {
-    console.log('1️⃣ Obteniendo token...');
+    // Buscar carpeta existente
+    const query = encodeURIComponent(
+      `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and trashed=false`
+    );
+    
+    const searchRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)&pageSize=1`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    
+    if (!searchRes.ok) {
+      throw new Error(`Error buscando carpeta: HTTP ${searchRes.status}`);
+    }
+    
+    const searchData = await searchRes.json();
+    if (searchData.files && searchData.files.length > 0) {
+      console.log(`✓ Carpeta encontrada: ${searchData.files[0].id}`);
+      return searchData.files[0].id;
+    }
+    
+    // Crear carpeta
+    console.log(`📁 Carpeta no existe, CREANDO...`);
+    const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        name: nombreArea,
+        mimeType: 'application/vnd.google-apps.folder'
+      })
+    });
+    
+    if (!createRes.ok) {
+      const errorData = await createRes.json();
+      throw new Error(`Error creando carpeta: ${errorData.error?.message || createRes.status}`);
+    }
+    
+    const carpeta = await createRes.json();
+    console.log(`✅ CARPETA CREADA: ${carpeta.id}`);
+    
+    // Dar permisos
+    const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        role: 'editor',
+        type: 'anyone'
+      })
+    });
+    
+    if (permRes.ok) {
+      console.log(`✓ Permisos asignados`);
+    } else {
+      console.warn(`⚠️ No se pudieron asignar permisos`);
+    }
+    
+    return carpeta.id;
+    
+  } catch(e) {
+    console.error(`\n❌ ERROR CRÍTICO EN CARPETA:\n${e.message}\n`);
+    throw new Error(`No se pudo crear/encontrar la carpeta ${nombreArea}: ${e.message}`);
+  }
+}
+
+/* Subir archivo - DEBE funcionar o lanzar error */
+async function subirAGoogleDrive(archivo, onProgress) {
+  console.log(`\n📤 SUBIENDO ARCHIVO A GOOGLE DRIVE\n`);
+  
+  try {
     const token = await obtenerTokenDrive();
-    console.log('✓ Token obtenido:', token.substring(0, 50) + '...');
+    console.log(`✓ Token obtenido`);
     
-    console.log('2️⃣ Obteniendo área...');
     const area = document.getElementById('area-select')?.value;
-    console.log('✓ Área:', area);
     if (!area) throw new Error('No se seleccionó área');
+    console.log(`✓ Área: ${area}`);
     
-    console.log('3️⃣ Preparando nombre de archivo...');
-    const fecha = new Date().toISOString().slice(0, 10);
-    const nombreFinal = `${fecha}_[${area}]_${archivo.name}`;
-    console.log('✓ Nombre final:', nombreFinal);
-    console.log('✓ Tipo MIME:', archivo.type);
-    console.log('✓ Tamaño:', archivo.size, 'bytes');
+    // CREAR LA CARPETA PRIMERO
+    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
+    console.log(`✓ ID de carpeta: ${idSubcarpeta}`);
     
     onProgress(40);
+    
+    const fecha = new Date().toISOString().slice(0, 10);
+    const nombreFinal = `${fecha}_${archivo.name}`;
+    console.log(`✓ Nombre: ${nombreFinal}`);
+    console.log(`✓ Tamaño: ${archivo.size} bytes`);
 
     return new Promise((resolve, reject) => {
-      console.log('4️⃣ Creando FormData...');
       const metadata = {
         name: nombreFinal,
-        mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        parents: [idSubcarpeta]
       };
-      console.log('✓ Metadatos:', JSON.stringify(metadata));
       
       const form = new FormData();
       form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       form.append('file', archivo);
-      console.log('✓ FormData creado');
 
-      console.log('5️⃣ Preparando XMLHttpRequest...');
       const xhr = new XMLHttpRequest();
-      const url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
-      console.log('✓ URL:', url);
-      
-      xhr.open('POST', url);
+      xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
       xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-      console.log('✓ Headers configurados');
       
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const p = Math.round(40 + (e.loaded / e.total) * 50);
-          console.log(`📊 Progreso: ${p}% (${e.loaded}/${e.total})`);
           onProgress(p);
         }
       };
       
       xhr.onload = () => {
-        console.log('6️⃣ Respuesta recibida');
-        console.log('✓ Status:', xhr.status);
-        console.log('✓ Response:', xhr.responseText.substring(0, 200));
+        console.log(`\n📨 RESPUESTA DEL SERVIDOR: ${xhr.status}\n`);
         
         if (xhr.status === 200) {
           try {
             const resp = JSON.parse(xhr.responseText);
-            console.log('✓ JSON parseado');
-            console.log('✓ File ID:', resp.id);
-            console.log('✓ Web View Link:', resp.webViewLink);
+            console.log(`✅ ARCHIVO SUBIDO EXITOSAMENTE`);
+            console.log(`✓ ID: ${resp.id}`);
+            console.log(`✓ Link: ${resp.webViewLink}`);
             
-            console.log('7️⃣ Asignando permisos...');
+            // Permisos
             fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
               method: 'POST',
               headers: {
@@ -728,50 +782,32 @@ async function subirAGoogleDrive(archivo, onProgress) {
                 'Content-Type': 'application/json'
               },
               body: JSON.stringify({ role: 'reader', type: 'anyone' })
-            }).then((permResp) => {
-              console.log('✓ Permisos: status', permResp.status);
-              console.log('═══════════════════════════════════');
-              console.log('✅ SUBIDA COMPLETADA');
-              console.log('═══════════════════════════════════');
+            }).then(() => {
               resolve(`https://drive.google.com/file/d/${resp.id}/view`);
-            }).catch((e) => {
-              console.warn('⚠️ Error asignando permisos:', e.message);
-              console.log('═══════════════════════════════════');
-              console.log('✅ SUBIDA COMPLETADA (sin permisos)');
-              console.log('═══════════════════════════════════');
+            }).catch(() => {
               resolve(`https://drive.google.com/file/d/${resp.id}/view`);
             });
-          } catch(parseErr) {
-            console.error('❌ Error parseando JSON:', parseErr.message);
-            reject(parseErr);
+          } catch(e) {
+            console.error(`❌ Error parseando respuesta: ${e.message}`);
+            reject(e);
           }
         } else {
-          console.error('❌ Error HTTP:', xhr.status);
-          console.error('Response text:', xhr.responseText);
-          reject(new Error(`Error HTTP ${xhr.status}: ${xhr.responseText}`));
+          console.error(`\n❌ ERROR HTTP ${xhr.status}\n`);
+          console.error(`Response: ${xhr.responseText}`);
+          reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
         }
       };
       
       xhr.onerror = (e) => {
-        console.error('❌ Error en XMLHttpRequest:', e);
-        console.error('State:', xhr.readyState);
+        console.error(`\n❌ ERROR DE RED\n`);
         reject(new Error('Error de red'));
       };
       
-      xhr.ontimeout = () => {
-        console.error('❌ Timeout');
-        reject(new Error('Timeout'));
-      };
-      
-      console.log('8️⃣ Enviando archivo...');
+      console.log(`📤 Enviando...`);
       xhr.send(form);
     });
   } catch(e) {
-    console.error('═══════════════════════════════════');
-    console.error('❌ ERROR EN SUBIDA');
-    console.error('═══════════════════════════════════');
-    console.error('Mensaje:', e.message);
-    console.error('Stack:', e.stack);
+    console.error(`\n❌ ERROR EN SUBIDA:\n${e.message}\n`);
     throw e;
   }
 }
