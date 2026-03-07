@@ -422,42 +422,92 @@ async function cargarMisEnvios() {
   }
 }
 
-document.addEventListener('DOMContentLoaded', () => {
-  initFirebase();
+document.addEventListener('DOMContentLoaded', async () => {
+  console.log('📋 DOMContentLoaded iniciado');
+  
+  // Iniciar Firebase
+  initFirebase().catch(e => console.error('Error en initFirebase:', e));
   poblarAreas('area-select');
   poblarAreas('filtro-area', 'Todas las áreas');
 
-  $('btn-google').addEventListener('click', login);
-  document.getElementById('btn-login-email')?.addEventListener('click', loginEmail);
-  document.getElementById('btn-registrar')?.addEventListener('click', registrarEmail);
-  document.getElementById('btn-forgot')?.addEventListener('click', olvidoContrasena);
+  // Esperar un poco para asegurar que los elementos existan
+  await new Promise(r => setTimeout(r, 100));
+
+  // Asignar listeners con verificación
+  // Nota: btn-google usa onclick directo en el HTML
+  
+  const btnLoginEmail = document.getElementById('btn-login-email');
+  if (btnLoginEmail) {
+    console.log('✓ Botón Login Email encontrado');
+    btnLoginEmail.addEventListener('click', loginEmail);
+  }
+
+  const btnRegistrar = document.getElementById('btn-registrar');
+  if (btnRegistrar) {
+    console.log('✓ Botón Registrar encontrado');
+    btnRegistrar.addEventListener('click', registrarEmail);
+  }
+
+  const btnForgot = document.getElementById('btn-forgot');
+  if (btnForgot) {
+    console.log('✓ Botón Forgot encontrado');
+    btnForgot.addEventListener('click', olvidoContrasena);
+  }
+
   document.querySelectorAll('.btn-logout').forEach(b => b.addEventListener('click', logout));
-  $('nb-subir').addEventListener('click', () => usuario ? irSubir() : ir('vista-login'));
-  $('nb-admin').addEventListener('click', () => { if(esAdmin()){ ir('vista-admin'); cargarAdmin(); } });
-  $('btn-enviar-otro').addEventListener('click', irSubir);
+  
+  const nbSubir = $('nb-subir');
+  if (nbSubir) nbSubir.addEventListener('click', () => usuario ? irSubir() : ir('vista-login'));
+  
+  const nbAdmin = $('nb-admin');
+  if (nbAdmin) nbAdmin.addEventListener('click', () => { if(esAdmin()){ ir('vista-admin'); cargarAdmin(); } });
+  
+  const btnEnviarOtro = $('btn-enviar-otro');
+  if (btnEnviarOtro) btnEnviarOtro.addEventListener('click', irSubir);
 
   const dz = $('dropzone');
-  dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dz-over'); });
-  dz.addEventListener('dragleave', () => dz.classList.remove('dz-over'));
-  dz.addEventListener('drop', e => {
-    e.preventDefault(); dz.classList.remove('dz-over');
-    if (e.dataTransfer.files[0]) seleccionar(e.dataTransfer.files[0]);
-  });
-  dz.addEventListener('click', abrirSelectorArchivo);
-  $('file-input').addEventListener('change', () => {
+  if (dz) {
+    dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('dz-over'); });
+    dz.addEventListener('dragleave', () => dz.classList.remove('dz-over'));
+    dz.addEventListener('drop', e => {
+      e.preventDefault(); dz.classList.remove('dz-over');
+      if (e.dataTransfer.files[0]) seleccionar(e.dataTransfer.files[0]);
+    });
+    dz.addEventListener('click', abrirSelectorArchivo);
+  }
+  
+  const fileInput = $('file-input');
+  if (fileInput) fileInput.addEventListener('change', () => {
     if ($('file-input').files[0]) seleccionar($('file-input').files[0]);
   });
-  $('btn-cambiar').addEventListener('click', () => {
+  
+  const btnCambiar = $('btn-cambiar');
+  if (btnCambiar) btnCambiar.addEventListener('click', () => {
     archivoSeleccionado = null;
-    $('file-preview').style.display = 'none';
-    $('dropzone').style.display = 'flex';
-    const fi = $('file-input'); if (fi) fi.value = '';
+    const fp = $('file-preview');
+    if (fp) fp.style.display = 'none';
+    const dz2 = $('dropzone');
+    if (dz2) dz2.style.display = 'flex';
+    const fi = $('file-input');
+    if (fi) fi.value = '';
   });
-  $('btn-enviar').addEventListener('click', enviarArchivo);
-  $('btn-filtrar').addEventListener('click', aplicarFiltros);
-  $('btn-limpiar').addEventListener('click', limpiarFiltros);
-  $('btn-excel').addEventListener('click', () => exportarExcel(docsAdmin, false));
-  $('btn-excel-filtrado').addEventListener('click', exportarFiltrado);
+  
+  const btnEnviar = $('btn-enviar');
+  if (btnEnviar) btnEnviar.addEventListener('click', enviarArchivo);
+  
+  const btnFiltrar = $('btn-filtrar');
+  if (btnFiltrar) btnFiltrar.addEventListener('click', aplicarFiltros);
+  
+  const btnLimpiar = $('btn-limpiar');
+  if (btnLimpiar) btnLimpiar.addEventListener('click', limpiarFiltros);
+  
+  const btnExcel = $('btn-excel');
+  if (btnExcel) btnExcel.addEventListener('click', () => exportarExcel(docsAdmin, false));
+  
+  const btnExcelFiltrado = $('btn-excel-filtrado');
+  if (btnExcelFiltrado) btnExcelFiltrado.addEventListener('click', exportarFiltrado);
+  
+  console.log('✓ Todos los listeners asignados correctamente');
 });
 
 /* ── VALIDACIÓN ── */
