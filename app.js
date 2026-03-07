@@ -1034,27 +1034,15 @@ async function generarComprobantePDF(d) {
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 0, W, 42, 'F');
 
-    // Ícono: cuadrado blanco con letra S en azul (sin Unicode)
-    doc.setFillColor(255, 255, 255);
-    doc.roundedRect(14, 9, 24, 24, 5, 5, 'F');
-    doc.setTextColor(37, 99, 235);
-    doc.setFontSize(15);
-    doc.setFont('helvetica', 'bold');
-    doc.text('S', 22, 25);
-
-    // Línea decorativa azul oscuro dentro del ícono
-    doc.setFillColor(29, 78, 216);
-    doc.rect(14, 30, 24, 3, 'F');
-
     // Título
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
-    doc.text('SISCTE - Comprobante de Envio', 44, 20);
+    doc.text('SISCTE - Comprobante de Envio', 18, 20);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text('Sistema de Gestion de Documentos Excel', 44, 28);
-    doc.text('Este documento certifica el registro exitoso de tu archivo.', 44, 35);
+    doc.text('Sistema de Gestion de Documentos Excel', 18, 28);
+    doc.text('Este documento certifica el registro exitoso de tu archivo.', 18, 35);
 
     // ── Badge verde "REGISTRADO" ──
     doc.setFillColor(22, 163, 74);
@@ -1460,14 +1448,134 @@ function cerrarModalArchivado() {
   $('modal-archivado').style.display = 'none';
 }
 
+/* ══════════════════════════════════
+   LIMPIAR DUPLICADOS DE GOOGLE DRIVE
+══════════════════════════════════ */
+function abrirModalLimpiarDuplicados() {
+  // Resetear estado del modal
+  $('limpieza-contenido').style.display = 'block';
+  $('limpieza-progreso').style.display = 'none';
+  $('check-confirmar').checked = false;
+  $('btn-iniciar-limpieza').disabled = true;
+  
+  // Mostrar modal
+  $('modal-limpiar-duplicados').style.display = 'flex';
+}
+
+function cerrarModalLimpiarDuplicados() {
+  $('modal-limpiar-duplicados').style.display = 'none';
+}
+
+// Habilitar botón solo si checkbox está marcado
+window.verificarCheckLimpieza = function() {
+  $('btn-iniciar-limpieza').disabled = !$('check-confirmar').checked;
+};
+
+async function iniciarLimpiezaDuplicados() {
+  $('limpieza-contenido').style.display = 'none';
+  $('limpieza-progreso').style.display = 'block';
+  $('limpieza-resultados').innerHTML = '';
+  
+  const log = (msg) => {
+    const el = $('limpieza-resultados');
+    el.innerHTML += msg + '\n';
+    el.scrollTop = el.scrollHeight;
+    console.log(msg);
+  };
+  
+  try {
+    log('🔍 Iniciando búsqueda de duplicados...\n');
+    
+    // Obtener lista de todas las entregas
+    const { where } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const qTodas = window._fb.query(
+      window._fb.collection(db,'entregas'),
+      where('archivado', '!=', true)
+    );
+    const snapTodas = await window._fb.getDocs(qTodas);
+    const entregas = snapTodas.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    
+    log(`✓ Se cargaron ${entregas.length} entregas\n`);
+    
+    // Agrupar por nombreArchivo + area + uid para encontrar duplicados
+    const grupos = {};
+    entregas.forEach(e => {
+      const key = `${e.uid}|${e.nombreArchivo}|${e.area}`;
+      if (!grupos[key]) grupos[key] = [];
+      grupos[key].push(e);
+    });
+    
+    let totalDuplicados = 0;
+    let totalEliminados = 0;
+    const token = await obtenerTokenDrive();
+    
+    for (const [key, grupo] of Object.entries(grupos)) {
+      if (grupo.length > 1) {
+        totalDuplicados += grupo.length - 1;
+        log(`\n📁 ${grupo[0].nombreArchivo} (${grupo.length} versiones)`);
+        
+        // Ordenar por timestamp (más recientes primero)
+        grupo.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+        
+        // Mantener el primero, eliminar los demás
+        const paraEliminar = grupo.slice(1);
+        
+        for (const doc of paraEliminar) {
+          log(`  🗑️ Eliminando (${doc.timestamp})...`);
+          
+          // Eliminar de Firestore
+          const { deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+          await deleteDoc(docRef(db,'entregas', doc.id));
+          
+          // Eliminar de Drive si tiene ID
+          if (doc.driveFileId) {
+            try {
+              await eliminarArchivoDeGoogleDrive(doc.driveFileId);
+              log(`    ✓ Eliminado`);
+              totalEliminados++;
+            } catch(e) {
+              log(`    ⚠️ Error en Drive: ${e.message}`);
+            }
+          } else {
+            log(`    ℹ️ Sin driveFileId`);
+            totalEliminados++;
+          }
+        }
+      }
+    }
+    
+    $('limpieza-progreso-bar').style.width = '100%';
+    $('limpieza-progreso-txt').textContent = '✓ Limpieza completada';
+    
+    log(`\n✅ RESUMEN:`);
+    log(`  • Registros duplicados encontrados: ${totalDuplicados}`);
+    log(`  • Registros eliminados: ${totalEliminados}`);
+    
+    setTimeout(() => {
+      cerrarModalLimpiarDuplicados();
+      cargarAdmin();
+      toast('Duplicados limpiados correctamente ✓');
+    }, 2000);
+    
+  } catch(e) {
+    console.error(e);
+    log(`\n❌ Error: ${e.message}`);
+    toast('Error durante limpieza: ' + e.message, 'err');
+  }
+}
+
 /* ── Exponer funciones al HTML inline ── */
 window.login                  = login;
 window.loginEmail             = loginEmail;
 window.registrarEmail         = registrarEmail;
 window.olvidoContrasena       = olvidoContrasena;
 window.abrirModalArchivado    = abrirModalArchivado;
-window.irSubir                = irSubir;
 window.cerrarModalArchivado   = cerrarModalArchivado;
+window.abrirModalLimpiarDuplicados = abrirModalLimpiarDuplicados;
+window.cerrarModalLimpiarDuplicados = cerrarModalLimpiarDuplicados;
+window.verificarCheckLimpieza = verificarCheckLimpieza;
+window.iniciarLimpiezaDuplicados = iniciarLimpiezaDuplicados;
+window.irSubir                = irSubir;
 window.seleccionarMesArchivado = seleccionarMesArchivado;
 window.archPaso2              = archPaso2;
 window.descargarMesCompleto   = descargarMesCompleto;
