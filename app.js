@@ -340,7 +340,7 @@ async function cargarMisEnvios() {
       return;
     }
     lista.innerHTML = docs.map(d=>`
-      <div class="mis-envio-item${d.archivado?' mei-archivado':''}">
+      <div class="mis-envio-item${d.archivado?' mei-archivado':''}" id="mei-${d.id}">
         <div class="mei-ico">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
         </div>
@@ -350,7 +350,10 @@ async function cargarMisEnvios() {
             <span class="mei-area">${d.area||'—'}</span>
             &nbsp;·&nbsp;${d.fechaTexto} · ${d.horaTexto}
             &nbsp;·&nbsp;${d.tamanoTexto||'—'}
-            ${d.archivado?'&nbsp;·&nbsp;<span style="color:var(--txt3);font-size:10px;font-weight:600;">Archivado</span>':''}
+            ${d.archivado
+              ? '&nbsp;·&nbsp;<span style="color:var(--txt3);font-size:10px;font-weight:600;">Archivado</span>'
+              : '&nbsp;·&nbsp;<span style="color:var(--blue);font-size:10px;font-weight:500;" title="Para reemplazar este archivo, sube uno nuevo con el mismo nombre">↩ Para reemplazar, sube el mismo nombre</span>'
+            }
           </div>
         </div>
       </div>`).join('');
@@ -380,7 +383,7 @@ document.addEventListener('DOMContentLoaded', () => {
     e.preventDefault(); dz.classList.remove('dz-over');
     if (e.dataTransfer.files[0]) seleccionar(e.dataTransfer.files[0]);
   });
-  dz.addEventListener('click', () => $('file-input').click());
+  dz.addEventListener('click', abrirSelectorArchivo);
   $('file-input').addEventListener('change', () => {
     if ($('file-input').files[0]) seleccionar($('file-input').files[0]);
   });
@@ -388,6 +391,7 @@ document.addEventListener('DOMContentLoaded', () => {
     archivoSeleccionado = null;
     $('file-preview').style.display = 'none';
     $('dropzone').style.display = 'flex';
+    const fi = $('file-input'); if (fi) fi.value = '';
   });
   $('btn-enviar').addEventListener('click', enviarArchivo);
   $('btn-filtrar').addEventListener('click', aplicarFiltros);
@@ -397,6 +401,22 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 /* ── VALIDACIÓN ── */
+
+/* Crea un input file nuevo cada vez que se abre el selector.
+   Esto garantiza que el evento change se dispare siempre,
+   incluso si el usuario elige el mismo archivo que antes. */
+function abrirSelectorArchivo() {
+  const input = document.createElement('input');
+  input.type   = 'file';
+  input.accept = '.xlsx,.xls';
+  input.style.display = 'none';
+  input.addEventListener('change', () => {
+    if (input.files[0]) seleccionar(input.files[0]);
+    input.remove();
+  });
+  document.body.appendChild(input);
+  input.click();
+}
 function seleccionar(f) {
   const ext = f.name.split('.').pop().toLowerCase();
   if (!['xlsx','xls'].includes(ext)) {
@@ -641,6 +661,21 @@ async function enviarArchivo() {
 
     setProgreso(80,'Registrando en Firestore...');
 
+    // ── Detectar si ya existe un archivo con el mismo nombre y área (reemplazo) ──
+    const { where, deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const qDup = window._fb.query(
+      window._fb.collection(db,'entregas'),
+      where('uid',          '==', usuario.uid),
+      where('nombreArchivo','==', archivoSeleccionado.name),
+      where('area',         '==', areaVal)
+    );
+    const snapDup = await window._fb.getDocs(qDup);
+    // Eliminar los duplicados anteriores (mismo nombre + misma área)
+    for (const docSnap of snapDup.docs) {
+      await deleteDoc(docRef(db,'entregas', docSnap.id));
+    }
+    const fueReemplazo = snapDup.docs.length > 0;
+
     await window._fb.addDoc(window._fb.collection(db,'entregas'),{
       uid:           usuario.uid,
       nombre:        usuario.nombre,
@@ -658,7 +693,7 @@ async function enviarArchivo() {
       timestamp:     ahora.toISOString()
     });
 
-    setProgreso(100,'¡Completado!');
+    setProgreso(100, fueReemplazo ? '¡Archivo reemplazado!' : '¡Completado!');
     mostrarExito(areaVal, fechaTexto, horaTexto);
 
     const numRegistro = 'SISCTE-' + Date.now().toString(36).toUpperCase();
@@ -727,46 +762,49 @@ async function generarComprobantePDF(d) {
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 0, W, 42, 'F');
 
-    // Ícono cuadrado blanco
+    // Ícono: cuadrado blanco con letra S en azul (sin Unicode)
     doc.setFillColor(255, 255, 255);
-    doc.roundedRect(14, 10, 22, 22, 4, 4, 'F');
-    doc.setFillColor(37, 99, 235);
-    doc.setFontSize(18);
-    doc.setFont('helvetica','bold');
+    doc.roundedRect(14, 9, 24, 24, 5, 5, 'F');
     doc.setTextColor(37, 99, 235);
-    doc.text('↑', 19, 25);
+    doc.setFontSize(15);
+    doc.setFont('helvetica', 'bold');
+    doc.text('S', 22, 25);
+
+    // Línea decorativa azul oscuro dentro del ícono
+    doc.setFillColor(29, 78, 216);
+    doc.rect(14, 30, 24, 3, 'F');
 
     // Título
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
-    doc.setFont('helvetica','bold');
-    doc.text('SISCTE — Comprobante de Envío', 42, 20);
+    doc.setFont('helvetica', 'bold');
+    doc.text('SISCTE - Comprobante de Envio', 44, 20);
     doc.setFontSize(9);
-    doc.setFont('helvetica','normal');
-    doc.text('Sistema de Gestión de Documentos Excel', 42, 27);
-    doc.text('Este documento certifica el registro exitoso de tu archivo.', 42, 33);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sistema de Gestion de Documentos Excel', 44, 28);
+    doc.text('Este documento certifica el registro exitoso de tu archivo.', 44, 35);
 
     // ── Badge verde "REGISTRADO" ──
     doc.setFillColor(22, 163, 74);
-    doc.roundedRect(14, 50, 50, 10, 3, 3, 'F');
+    doc.roundedRect(14, 50, 52, 11, 3, 3, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
-    doc.setFont('helvetica','bold');
-    doc.text('✓  REGISTRADO', 18, 57);
+    doc.setFont('helvetica', 'bold');
+    doc.text('REGISTRADO', 19, 57.5);
 
     // N° de registro
     doc.setTextColor(107, 114, 128);
     doc.setFontSize(8);
-    doc.setFont('helvetica','normal');
-    doc.text('N° de Registro: ' + d.registro, 70, 57);
+    doc.setFont('helvetica', 'normal');
+    doc.text('No. de Registro: ' + d.registro, 70, 57);
 
-    // ── Sección datos ──
+    // ── Seccion datos ──
     const campos = [
       ['Enviado por',  d.nombre],
       ['Correo',       d.email],
-      ['Área',         d.area],
+      ['Area',         d.area],
       ['Archivo',      d.archivo],
-      ['Tamaño',       d.tamano],
+      ['Tamano',       d.tamano],
       ['Fecha',        d.fecha],
       ['Hora',         d.hora],
       ['Almacenamiento', 'Google Drive'],
@@ -774,24 +812,23 @@ async function generarComprobantePDF(d) {
 
     let y = 72;
     campos.forEach(([lbl, val], i) => {
-      // Fondo alternado
       if (i % 2 === 0) {
         doc.setFillColor(243, 244, 246);
         doc.rect(14, y - 5, W - 28, 10, 'F');
       }
       doc.setTextColor(107, 114, 128);
       doc.setFontSize(8);
-      doc.setFont('helvetica','bold');
+      doc.setFont('helvetica', 'bold');
       doc.text(lbl.toUpperCase(), 18, y);
       doc.setTextColor(17, 24, 39);
       doc.setFontSize(10);
-      doc.setFont('helvetica','normal');
-      const valStr = String(val || '—');
+      doc.setFont('helvetica', 'normal');
+      const valStr = String(val || '-');
       doc.text(valStr.length > 60 ? valStr.substring(0,57)+'...' : valStr, 70, y);
       y += 12;
     });
 
-    // ── Línea separadora ──
+    // ── Linea separadora ──
     doc.setDrawColor(229, 231, 235);
     doc.setLineWidth(0.5);
     doc.line(14, y + 2, W - 14, y + 2);
@@ -802,9 +839,9 @@ async function generarComprobantePDF(d) {
     doc.roundedRect(14, y, W - 28, 18, 3, 3, 'F');
     doc.setTextColor(37, 99, 235);
     doc.setFontSize(8);
-    doc.setFont('helvetica','bold');
-    doc.text('INFORMACIÓN', 18, y + 7);
-    doc.setFont('helvetica','normal');
+    doc.setFont('helvetica', 'bold');
+    doc.text('INFORMACION', 18, y + 7);
+    doc.setFont('helvetica', 'normal');
     doc.setTextColor(30, 64, 175);
     doc.text('Guarda este comprobante como respaldo de tu entrega. El archivo fue', 18, y + 12);
     doc.text('almacenado en Google Drive y el registro queda permanente en el sistema.', 18, y + 16);
@@ -814,12 +851,12 @@ async function generarComprobantePDF(d) {
     doc.rect(0, 280, W, 17, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(8);
-    doc.setFont('helvetica','normal');
-    doc.text('Sistema SISCTE — Generado automáticamente el ' + d.fecha + ' a las ' + d.hora, 14, 291);
+    doc.setFont('helvetica', 'normal');
+    doc.text('Sistema SISCTE - Generado el ' + d.fecha + ' a las ' + d.hora, 14, 291);
     doc.text('kattyeliza2000.github.io/SISCTE', W - 14, 291, { align: 'right' });
 
-    doc.save(`Comprobante_SISCTE_${d.registro}.pdf`);
-    toast('Comprobante PDF descargado ✓');
+    doc.save('Comprobante_SISCTE_' + d.registro + '.pdf');
+    toast('Comprobante PDF descargado');
   } catch(e) {
     console.warn('PDF error:', e.message);
   }
