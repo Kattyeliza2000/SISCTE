@@ -671,7 +671,8 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
     const carpeta = await crear.json();
     console.log(`✓ Subcarpeta creada: ${carpeta.id}`);
 
-    // ── 3. Dar permiso automático "anyone with link" (reader) ──
+    // ── 3. Dar permiso "anyone with link" como EDITOR (no reader) ──
+    //    Así cualquiera con el link PUEDE ESCRIBIR archivos
     try {
       await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
         method: 'POST',
@@ -680,14 +681,14 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
           'Content-Type':  'application/json'
         },
         body: JSON.stringify({
-          role: 'reader',
+          role: 'editor',  // ← CAMBIO: 'editor' en lugar de 'reader'
           type: 'anyone'
         })
       });
-      console.log(`✓ Permisos asignados a ${nombreArea}`);
-      toast(`📁 Carpeta "${nombreArea}" creada ✓`);
+      console.log(`✓ Permisos asignados a ${nombreArea} como EDITOR`);
+      toast(`📁 Carpeta "${nombreArea}" creada y compartida ✓`);
     } catch(e) {
-      // No es crítico si falla el permiso
+      // No es crítico si falla el permiso, intentamos con el archivo
       console.warn('Aviso: No se pudo asignar permiso automático:', e.message);
     }
 
@@ -706,11 +707,17 @@ async function subirAGoogleDrive(archivo, onProgress) {
 
   onProgress(15);
 
+  // Obtener o crear (solo primera vez) la subcarpeta del área
+  // AHORA CON PERMISOS DE EDITOR para todos los usuarios
+  const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
+
+  onProgress(30);
+
   return new Promise((resolve, reject) => {
     const metadata = {
       name: `${fecha}_${archivo.name}`,
-      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-      // CAMBIO: No especificamos 'parents' para subir a la raíz directamente
+      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      parents: [idSubcarpeta]
     };
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -721,15 +728,13 @@ async function subirAGoogleDrive(archivo, onProgress) {
     xhr.setRequestHeader('Authorization', 'Bearer ' + token);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
-        const p = Math.round(15 + (e.loaded / e.total) * 75);
+        const p = Math.round(30 + (e.loaded / e.total) * 60);
         onProgress(p);
       }
     };
     xhr.onload = () => {
       if (xhr.status === 200) {
         const resp = JSON.parse(xhr.responseText);
-        console.log('✓ Archivo subido a Drive:', resp.id);
-        
         // Dar acceso de lectura a cualquiera con el link
         fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
           method: 'POST',
@@ -779,22 +784,22 @@ async function eliminarArchivoDeGoogleDrive(fileId) {
 }
 
 /* ══════════════════════════════════
-   BUSCAR Y ELIMINAR DUPLICADOS EN DRIVE (RAÍZ)
+   BUSCAR Y ELIMINAR DUPLICADOS EN DRIVE
 ══════════════════════════════════ */
-async function buscarYEliminarDuplicadosEnRaiz(nombreArchivo) {
+async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
   try {
     const token = await obtenerTokenDrive();
     
     // Esperar un poco para asegurar que el archivo se subió completamente
     await new Promise(r => setTimeout(r, 500));
     
-    // Buscar archivos con el mismo nombre EN LA RAÍZ (sin especificar padre)
+    // Buscar archivos con el mismo nombre dentro de la subcarpeta
     const nombreSinFecha = nombreArchivo;
     const query = encodeURIComponent(
-      `name like '%${nombreSinFecha}%' and trashed=false`
+      `name like '%${nombreSinFecha}%' and '${idSubcarpeta}' in parents and trashed=false`
     );
     
-    console.log(`🔍 Buscando duplicados con patrón: %${nombreSinFecha}%`);
+    console.log(`🔍 Buscando duplicados con patrón: %${nombreSinFecha}% en carpeta ${idSubcarpeta}`);
     
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime desc`,
@@ -849,7 +854,7 @@ async function buscarYEliminarDuplicadosEnRaiz(nombreArchivo) {
       return [];
     }
   } catch(e) {
-    console.error('❌ Error en buscarYEliminarDuplicadosEnRaiz:', e);
+    console.error('❌ Error en buscarYEliminarDuplicadosEnDrive:', e);
     return [];
   }
 }
@@ -880,17 +885,20 @@ async function enviarArchivo() {
     /* ─ Todos los archivos van a Google Drive ─ */
     setProgreso(20, 'Conectando con Google Drive...');
     const token = await obtenerTokenDrive();
+    const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
+    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
     
     storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
       setProgreso(20 + Math.round(p * 0.6), `Subiendo a Drive... ${p}%`);
     });
     
-    // NUEVO: Buscar y eliminar duplicados en Google Drive (sin subcarpeta, en raíz)
+    // Buscar y eliminar duplicados en Google Drive
     console.log('🔄 Iniciando búsqueda de duplicados en Drive...');
     setProgreso(75, 'Limpiando archivos duplicados...');
     try {
-      const duplicadosEliminados = await buscarYEliminarDuplicadosEnRaiz(
-        archivoSeleccionado.name
+      const duplicadosEliminados = await buscarYEliminarDuplicadosEnDrive(
+        archivoSeleccionado.name,
+        idSubcarpeta
       );
       console.log(`✓ Duplicados eliminados de Drive: ${duplicadosEliminados.length}`);
     } catch(e) {
