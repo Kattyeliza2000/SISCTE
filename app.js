@@ -742,6 +742,31 @@ async function subirAGoogleDrive(archivo, onProgress) {
 }
 
 /* ══════════════════════════════════
+   ELIMINAR ARCHIVO DE GOOGLE DRIVE
+══════════════════════════════════ */
+async function eliminarArchivoDeGoogleDrive(fileId) {
+  try {
+    const token = await obtenerTokenDrive();
+    const response = await fetch(`https://www.googleapis.com/drive/v3/files/${fileId}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': 'Bearer ' + token
+      }
+    });
+    if (response.status === 204) {
+      console.log('✓ Archivo eliminado de Drive:', fileId);
+      return true;
+    } else {
+      console.warn('Código de respuesta al eliminar:', response.status);
+      return false;
+    }
+  } catch(e) {
+    console.error('Error eliminando archivo de Drive:', e);
+    return false;
+  }
+}
+
+/* ══════════════════════════════════
    ENVIAR ARCHIVO — ESTRATEGIA DUAL
 ══════════════════════════════════ */
 async function enviarArchivo() {
@@ -780,11 +805,39 @@ async function enviarArchivo() {
       where('area',         '==', areaVal)
     );
     const snapDup = await window._fb.getDocs(qDup);
+    
     // Eliminar los duplicados anteriores (mismo nombre + misma área)
+    const archivosAEliminar = [];
     for (const docSnap of snapDup.docs) {
+      const data = docSnap.data();
+      if (data.driveFileId) {
+        // Guardar el ID del archivo de Drive para eliminarlo
+        archivosAEliminar.push(data.driveFileId);
+      }
+      // Eliminar el registro de Firestore
       await deleteDoc(docRef(db,'entregas', docSnap.id));
     }
+    
+    // Eliminar los archivos antiguos de Google Drive
+    if (archivosAEliminar.length > 0) {
+      console.log('Eliminando archivos antiguos de Drive:', archivosAEliminar);
+      for (const fileId of archivosAEliminar) {
+        try {
+          await eliminarArchivoDeGoogleDrive(fileId);
+        } catch(e) {
+          console.warn('No se pudo eliminar archivo de Drive:', e);
+        }
+      }
+    }
+    
     const fueReemplazo = snapDup.docs.length > 0;
+
+    // Extraer el driveFileId del storageURL (formato: https://drive.google.com/file/d/{fileId}/view)
+    let driveFileId = null;
+    if (storageURL) {
+      const match = storageURL.match(/\/d\/([a-zA-Z0-9-_]+)\//);
+      if (match) driveFileId = match[1];
+    }
 
     await window._fb.addDoc(window._fb.collection(db,'entregas'),{
       uid:           usuario.uid,
@@ -797,6 +850,7 @@ async function enviarArchivo() {
       tamanoTexto:   formatSize(archivoSeleccionado.size),
       metodo:        'google_drive',
       storageURL,
+      driveFileId,    // ← Guardar el ID del archivo de Drive
       detalle:       detalleVal,
       fechaTexto,
       horaTexto,
