@@ -152,7 +152,8 @@ async function loginEmail() {
   const pass  = document.getElementById('login-pass')?.value;
   if (!email || !pass) { toast('Ingresa correo y contraseña','err'); return; }
   try {
-    await window._fb.signInWithEmailAndPassword(auth, email, pass);
+    const cred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
+    await cred.user.reload();
   } catch(e) {
     const msg = e.code === 'auth/invalid-credential' ? 'Correo o contraseña incorrectos'
               : e.code === 'auth/user-not-found'     ? 'No existe una cuenta con ese correo'
@@ -172,6 +173,10 @@ async function registrarEmail() {
   try {
     const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
     await window._fb.updateProfile(cred.user, { displayName: nombre });
+    await cred.user.reload();
+    // Trigger auth state refresh manually
+    usuario = { uid: cred.user.uid, nombre: nombre, email: cred.user.email, foto: cred.user.photoURL };
+    actualizarNav();
     toast('Cuenta creada exitosamente ✓');
   } catch(e) {
     const msg = e.code === 'auth/email-already-in-use' ? 'Ya existe una cuenta con ese correo'
@@ -232,9 +237,31 @@ function toast(msg, tipo='ok') {
 
 function actualizarNav() {
   if (usuario) {
-    $('nav-foto').src = usuario.foto || '';
+    const fotoEl = $('nav-foto');
+    if (usuario.foto) {
+      fotoEl.src = usuario.foto;
+      fotoEl.style.display = 'block';
+      const initEl = $('nav-iniciales');
+      if (initEl) initEl.style.display = 'none';
+    } else {
+      fotoEl.style.display = 'none';
+      let initEl = $('nav-iniciales');
+      if (!initEl) {
+        initEl = document.createElement('div');
+        initEl.id = 'nav-iniciales';
+        initEl.style.cssText = 'width:26px;height:26px;border-radius:50%;background:var(--blue);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;';
+        fotoEl.parentNode.insertBefore(initEl, fotoEl.nextSibling);
+      }
+      const nombre = usuario.nombre || usuario.email || '?';
+      const partes = nombre.trim().split(' ');
+      initEl.textContent = partes.length >= 2
+        ? (partes[0][0] + partes[1][0]).toUpperCase()
+        : nombre.slice(0,2).toUpperCase();
+      initEl.style.display = 'flex';
+    }
     $('nav-nombre').textContent = usuario.nombre?.split(' ')[0] || usuario.email;
     show('nav-sesion'); hide('nav-guest');
+    esAdmin() ? show('nb-admin') : hide('nb-admin');
   } else {
     hide('nav-sesion'); show('nav-guest'); hide('nb-admin');
   }
