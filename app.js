@@ -655,79 +655,123 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
 
 /* Sube el archivo DIRECTAMENTE a raíz de Google Drive */
 async function subirAGoogleDrive(archivo, onProgress) {
+  console.log('═══════════════════════════════════');
+  console.log('INICIANDO SUBIDA A GOOGLE DRIVE');
+  console.log('═══════════════════════════════════');
+  
   try {
-    console.log('📤 Iniciando subida...');
+    console.log('1️⃣ Obteniendo token...');
     const token = await obtenerTokenDrive();
-    console.log('✓ Token listo');
+    console.log('✓ Token obtenido:', token.substring(0, 50) + '...');
     
-    const area = document.getElementById('area-select')?.value || 'SIN_AREA';
-    console.log(`📍 Área: ${area}`);
+    console.log('2️⃣ Obteniendo área...');
+    const area = document.getElementById('area-select')?.value;
+    console.log('✓ Área:', area);
+    if (!area) throw new Error('No se seleccionó área');
+    
+    console.log('3️⃣ Preparando nombre de archivo...');
+    const fecha = new Date().toISOString().slice(0, 10);
+    const nombreFinal = `${fecha}_[${area}]_${archivo.name}`;
+    console.log('✓ Nombre final:', nombreFinal);
+    console.log('✓ Tipo MIME:', archivo.type);
+    console.log('✓ Tamaño:', archivo.size, 'bytes');
     
     onProgress(40);
-    const fecha = new Date().toISOString().slice(0, 10);
-    // Nombre con fecha y área para identificar fácilmente
-    const nombreFinal = `${fecha}_[${area}]_${archivo.name}`;
-    console.log(`📝 Archivo: ${nombreFinal}`);
 
     return new Promise((resolve, reject) => {
+      console.log('4️⃣ Creando FormData...');
       const metadata = {
         name: nombreFinal,
         mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        // SIN parents - va a raíz
       };
+      console.log('✓ Metadatos:', JSON.stringify(metadata));
       
       const form = new FormData();
       form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       form.append('file', archivo);
+      console.log('✓ FormData creado');
 
+      console.log('5️⃣ Preparando XMLHttpRequest...');
       const xhr = new XMLHttpRequest();
-      xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
+      const url = 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink';
+      console.log('✓ URL:', url);
+      
+      xhr.open('POST', url);
       xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+      console.log('✓ Headers configurados');
       
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const p = Math.round(40 + (e.loaded / e.total) * 50);
+          console.log(`📊 Progreso: ${p}% (${e.loaded}/${e.total})`);
           onProgress(p);
         }
       };
       
       xhr.onload = () => {
+        console.log('6️⃣ Respuesta recibida');
+        console.log('✓ Status:', xhr.status);
+        console.log('✓ Response:', xhr.responseText.substring(0, 200));
+        
         if (xhr.status === 200) {
-          const resp = JSON.parse(xhr.responseText);
-          console.log(`✓ Subido: ${resp.id}`);
-          
-          // Permisos de lectura
-          fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
-            method: 'POST',
-            headers: {
-              'Authorization': 'Bearer ' + token,
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({ role: 'reader', type: 'anyone' })
-          }).then(() => {
-            console.log('✓ Permisos OK');
-            resolve(`https://drive.google.com/file/d/${resp.id}/view`);
-          }).catch((e) => {
-            console.warn('⚠️ Permisos fallaron pero archivo OK');
-            resolve(`https://drive.google.com/file/d/${resp.id}/view`);
-          });
+          try {
+            const resp = JSON.parse(xhr.responseText);
+            console.log('✓ JSON parseado');
+            console.log('✓ File ID:', resp.id);
+            console.log('✓ Web View Link:', resp.webViewLink);
+            
+            console.log('7️⃣ Asignando permisos...');
+            fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
+              method: 'POST',
+              headers: {
+                'Authorization': 'Bearer ' + token,
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ role: 'reader', type: 'anyone' })
+            }).then((permResp) => {
+              console.log('✓ Permisos: status', permResp.status);
+              console.log('═══════════════════════════════════');
+              console.log('✅ SUBIDA COMPLETADA');
+              console.log('═══════════════════════════════════');
+              resolve(`https://drive.google.com/file/d/${resp.id}/view`);
+            }).catch((e) => {
+              console.warn('⚠️ Error asignando permisos:', e.message);
+              console.log('═══════════════════════════════════');
+              console.log('✅ SUBIDA COMPLETADA (sin permisos)');
+              console.log('═══════════════════════════════════');
+              resolve(`https://drive.google.com/file/d/${resp.id}/view`);
+            });
+          } catch(parseErr) {
+            console.error('❌ Error parseando JSON:', parseErr.message);
+            reject(parseErr);
+          }
         } else {
-          console.error(`❌ Error ${xhr.status}`);
-          console.error(`Response:`, xhr.responseText);
-          reject(new Error('Error ' + xhr.status));
+          console.error('❌ Error HTTP:', xhr.status);
+          console.error('Response text:', xhr.responseText);
+          reject(new Error(`Error HTTP ${xhr.status}: ${xhr.responseText}`));
         }
       };
       
-      xhr.onerror = () => {
-        console.error('❌ Error red');
+      xhr.onerror = (e) => {
+        console.error('❌ Error en XMLHttpRequest:', e);
+        console.error('State:', xhr.readyState);
         reject(new Error('Error de red'));
       };
       
-      console.log('📤 Enviando...');
+      xhr.ontimeout = () => {
+        console.error('❌ Timeout');
+        reject(new Error('Timeout'));
+      };
+      
+      console.log('8️⃣ Enviando archivo...');
       xhr.send(form);
     });
   } catch(e) {
-    console.error('❌ Error subida:', e.message);
+    console.error('═══════════════════════════════════');
+    console.error('❌ ERROR EN SUBIDA');
+    console.error('═══════════════════════════════════');
+    console.error('Mensaje:', e.message);
+    console.error('Stack:', e.stack);
     throw e;
   }
 }
