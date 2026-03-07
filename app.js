@@ -109,8 +109,9 @@ async function initFirebase() {
     if (u) {
       usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
       actualizarNav();
-      show('nb-subir');
-      esAdmin() ? show('nb-admin') : hide('nb-admin');
+      esAdmin() ? show('nb-subir') : hide('nb-subir');
+      esAdmin() ? show('nb-subir') : hide('nb-subir');
+    esAdmin() ? show('nb-admin') : hide('nb-admin');
       irSubir();
     } else {
       usuario = null;
@@ -261,6 +262,7 @@ function actualizarNav() {
     }
     $('nav-nombre').textContent = usuario.nombre?.split(' ')[0] || usuario.email;
     show('nav-sesion'); hide('nav-guest');
+    esAdmin() ? show('nb-subir') : hide('nb-subir');
     esAdmin() ? show('nb-admin') : hide('nb-admin');
   } else {
     hide('nav-sesion'); show('nav-guest'); hide('nb-admin');
