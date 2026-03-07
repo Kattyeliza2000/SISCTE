@@ -76,41 +76,45 @@ const AREAS = [
   "UREM","OIAT","EDU_VIAL","CRV","ECU-911"
 ];
 
-let db, auth, storage, usuario = null;
+let db, auth, usuario = null;
 let archivoSeleccionado = null;
 let docsAdmin = [];
+let _firebaseReady = null; // Promesa que resuelve cuando Firebase está listo
 
 /* ══════════════════════════════════
    FIREBASE INIT
 ══════════════════════════════════ */
+let _resolveFirebase;
+_firebaseReady = new Promise(res => { _resolveFirebase = res; });
+
 async function initFirebase() {
   const { initializeApp }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
   const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  const { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile }
+  const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+    getRedirectResult, signOut, onAuthStateChanged,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    sendPasswordResetEmail, updateProfile }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
 
   const app = initializeApp(FIREBASE_CONFIG);
-  db = getFirestore(app);
+  db   = getFirestore(app);
   auth = getAuth(app);
 
   window._fb = {
     collection, addDoc, getDocs, orderBy, query, doc, getDoc,
-    GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile
+    GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+    getRedirectResult, signOut, onAuthStateChanged,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword,
+    sendPasswordResetEmail, updateProfile
   };
 
-  // Capturar resultado del redirect de Google cuando vuelve la página
+  // Capturar resultado del redirect de Google si viene de uno
   try {
     const result = await getRedirectResult(auth);
-    if (result?.user) {
-      // El onAuthStateChanged se encarga de actualizar la UI
-    }
-  } catch(e) {
-    console.warn('Redirect result error:', e.message);
-  }
+    if (result?.user) console.log('Redirect login OK:', result.user.email);
+  } catch(e) { console.warn('Redirect result:', e.message); }
 
   onAuthStateChanged(auth, u => {
     if (u) {
@@ -125,6 +129,8 @@ async function initFirebase() {
       ir('vista-login');
     }
   });
+
+  _resolveFirebase(); // Firebase listo — desbloquear login
 }
 
 /* ══════════════════════════════════
@@ -132,10 +138,27 @@ async function initFirebase() {
 ══════════════════════════════════ */
 async function login() {
   try {
+    await _firebaseReady; // Esperar a que Firebase esté completamente cargado
     const provider = new window._fb.GoogleAuthProvider();
-    await window._fb.signInWithRedirect(auth, provider);
-    // La página se redirige a Google y vuelve automáticamente
-  } catch(e) { toast('Error al iniciar sesión: ' + e.message, 'err'); }
+    try {
+      // Intentar popup primero (más rápido)
+      await window._fb.signInWithPopup(auth, provider);
+    } catch(popupErr) {
+      // Si el popup falla (bloqueado por navegador), usar redirect
+      if (popupErr.code === 'auth/popup-blocked' ||
+          popupErr.code === 'auth/popup-closed-by-user' ||
+          popupErr.code === 'auth/cancelled-popup-request') {
+        await window._fb.signInWithRedirect(auth, provider);
+      } else {
+        throw popupErr;
+      }
+    }
+  } catch(e) {
+    if (e.code !== 'auth/popup-closed-by-user' &&
+        e.code !== 'auth/cancelled-popup-request') {
+      toast('Error al iniciar sesión: ' + (e.message || e.code), 'err');
+    }
+  }
 }
 
 async function logout() {
@@ -146,6 +169,7 @@ async function logout() {
 }
 
 async function loginEmail() {
+  await _firebaseReady;
   const email = document.getElementById('login-email')?.value?.trim();
   const pass  = document.getElementById('login-pass')?.value;
   if (!email || !pass) { toast('Ingresa correo y contraseña','err'); return; }
@@ -162,6 +186,7 @@ async function loginEmail() {
 }
 
 async function registrarEmail() {
+  await _firebaseReady;
   const nombre = document.getElementById('reg-nombre')?.value?.trim();
   const email  = document.getElementById('reg-email')?.value?.trim();
   const pass   = document.getElementById('reg-pass')?.value;
@@ -172,10 +197,9 @@ async function registrarEmail() {
     const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
     await window._fb.updateProfile(cred.user, { displayName: nombre });
     await cred.user.reload();
-    // Trigger auth state refresh manually
     usuario = { uid: cred.user.uid, nombre: nombre, email: cred.user.email, foto: cred.user.photoURL };
     actualizarNav();
-    toast('Cuenta creada exitosamente ✓');
+    toast('Cuenta creada exitosamente');
   } catch(e) {
     const msg = e.code === 'auth/email-already-in-use' ? 'Ya existe una cuenta con ese correo'
               : e.code === 'auth/invalid-email'        ? 'Correo no válido'
