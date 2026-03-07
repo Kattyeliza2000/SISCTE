@@ -57,16 +57,18 @@ const EMAILJS_CONFIG = {
 /* Google Drive API para archivos grandes */
 const GDRIVE_CONFIG = {
   clientId: '270864419518-qi6hia7bu9012til3b0fhn13tct81feu.apps.googleusercontent.com',
-  scope: 'https://www.googleapis.com/auth/drive.file'
+  scope: 'https://www.googleapis.com/auth/drive'
 };
+
+/* ID de la carpeta raíz ORGANICO-CTE en Google Drive */
+const GDRIVE_ROOT_FOLDER_ID = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
 /* Archivos menores a este umbral van a Firestore comprimido */
 const UMBRAL_BYTES = 800 * 1024;
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
-  "iastudillol@unemi.edu.ec",
-  "ky211209@gmail.com"
+  "iastudillol@unemi.edu.ec"
 ];
 
 const AREAS = [
@@ -449,58 +451,17 @@ function setProgreso(pct, label) {
 
 /* ══════════════════════════════════
    GOOGLE DRIVE UPLOAD
+   — Carpeta general: ORGANICO-CTE (ID fijo)
+   — Subcarpetas por área: se crean solo la primera vez,
+     las siguientes subidas van directo a la existente
 ══════════════════════════════════ */
-async function subirAGoogleDrive(archivo, onProgress) {
-  // Obtener token usando Google Identity Services (GIS) - método moderno
-  const token = await obtenerTokenDrive();
 
-  return new Promise((resolve, reject) => {
-    const fecha = new Date().toISOString().slice(0,10);
-    const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
-    const metadata = {
-      name: `${fecha}_${area}_${archivo.name}`,
-      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-    };
-    const form = new FormData();
-    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
-    form.append('file', archivo);
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
-    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-    xhr.upload.onprogress = (e) => {
-      if (e.lengthComputable) {
-        const p = Math.round(20 + (e.loaded / e.total) * 70);
-        onProgress(p);
-      }
-    };
-    xhr.onload = () => {
-      if (xhr.status === 200) {
-        const resp = JSON.parse(xhr.responseText);
-        fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
-          method: 'POST',
-          headers: {
-            'Authorization': 'Bearer ' + token,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ role: 'reader', type: 'anyone' })
-        }).then(() => {
-          resolve(`https://drive.google.com/file/d/${resp.id}/view`);
-        }).catch(() => {
-          resolve(resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`);
-        });
-      } else {
-        reject(new Error('Error subiendo a Google Drive: ' + xhr.status + ' ' + xhr.responseText));
-      }
-    };
-    xhr.onerror = () => reject(new Error('Error de red al subir a Google Drive'));
-    xhr.send(form);
-  });
-}
+/* ID fijo de tu carpeta ORGANICO-CTE en Google Drive */
+const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
 /* Obtener token OAuth2 usando Google Identity Services */
 function obtenerTokenDrive() {
   return new Promise((resolve, reject) => {
-    // Cargar GIS si no está cargado
     const cargarGIS = () => new Promise((res, rej) => {
       if (window.google?.accounts?.oauth2) { res(); return; }
       const s = document.createElement('script');
@@ -522,7 +483,103 @@ function obtenerTokenDrive() {
         }
       });
       client.requestAccessToken();
-    }).catch(reject);
+    }).catch(() => reject(new Error('No se pudo cargar Google Identity Services. Verifica tu conexión.')));
+  });
+}
+
+/* Busca la subcarpeta del área dentro de ORGANICO-CTE.
+   Si no existe todavía, la crea una sola vez.
+   Devuelve el ID de la subcarpeta. */
+async function obtenerOCrearSubcarpeta(token, nombreArea) {
+  // Buscar si ya existe la subcarpeta con ese nombre
+  const query = encodeURIComponent(
+    `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
+  );
+  const res = await fetch(
+    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`,
+    { headers: { 'Authorization': 'Bearer ' + token } }
+  );
+  if (!res.ok) throw new Error('Error buscando subcarpeta: ' + res.status);
+  const data = await res.json();
+
+  // Si ya existe, devolver su ID directamente (no crear nada)
+  if (data.files && data.files.length > 0) {
+    return data.files[0].id;
+  }
+
+  // Primera vez: crear la subcarpeta dentro de ORGANICO-CTE
+  const crear = await fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      name: nombreArea,
+      mimeType: 'application/vnd.google-apps.folder',
+      parents: [GDRIVE_CARPETA_GENERAL]
+    })
+  });
+  if (!crear.ok) throw new Error('Error creando subcarpeta: ' + crear.status);
+  const carpeta = await crear.json();
+  return carpeta.id;
+}
+
+/* Sube el archivo a ORGANICO-CTE → subcarpeta del área */
+async function subirAGoogleDrive(archivo, onProgress) {
+  const token = await obtenerTokenDrive();
+  const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
+  const fecha = new Date().toISOString().slice(0, 10);
+
+  onProgress(15);
+
+  // Obtener o crear (solo primera vez) la subcarpeta del área
+  const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
+
+  onProgress(30);
+
+  return new Promise((resolve, reject) => {
+    const metadata = {
+      name: `${fecha}_${archivo.name}`,
+      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      parents: [idSubcarpeta]
+    };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', archivo);
+
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const p = Math.round(30 + (e.loaded / e.total) * 60);
+        onProgress(p);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const resp = JSON.parse(xhr.responseText);
+        // Dar acceso de lectura a cualquiera con el link
+        fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ role: 'reader', type: 'anyone' })
+        }).then(() => {
+          resolve(`https://drive.google.com/file/d/${resp.id}/view`);
+        }).catch(() => {
+          resolve(resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`);
+        });
+      } else {
+        const msg = (() => { try { return JSON.parse(xhr.responseText)?.error?.message; } catch(e) { return xhr.responseText; } })();
+        reject(new Error('Error subiendo a Google Drive: ' + (msg || xhr.status)));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red al subir a Google Drive'));
+    xhr.send(form);
   });
 }
 
@@ -610,7 +667,8 @@ async function enviarArchivo() {
 
   } catch(err) {
     console.error(err);
-    toast('Error al subir: '+err.message,'err');
+    const msg = err?.message || (typeof err === 'string' ? err : 'Error desconocido al subir');
+    toast('Error al subir: ' + msg, 'err');
     $('progress-wrap').style.display='none';
     resetBtn();
   }
