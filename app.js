@@ -645,76 +645,15 @@ function obtenerTokenDrive(forzarNuevo = false) {
   });
 }
 
-/* Busca la subcarpeta del área. Si no existe, la crea. */
+/* NO CREAR CARPETAS - Subir archivos directamente a raíz de Google Drive */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
-  try {
-    console.log(`🔍 Buscando carpeta: "${nombreArea}"`);
-    
-    // Buscar carpeta por nombre (en cualquier parte del Drive)
-    const query = encodeURIComponent(
-      `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and trashed=false`
-    );
-    
-    const res = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)&pageSize=1`,
-      { headers: { 'Authorization': 'Bearer ' + token } }
-    );
-    
-    if (res.ok) {
-      const data = await res.json();
-      if (data.files && data.files.length > 0) {
-        console.log(`✓ Carpeta existe: ${nombreArea}`);
-        return data.files[0].id;
-      }
-    }
-    
-    // Si no existe, crear
-    console.log(`📁 Creando carpeta: ${nombreArea}`);
-    const crearRes = await fetch('https://www.googleapis.com/drive/v3/files', {
-      method: 'POST',
-      headers: {
-        'Authorization': 'Bearer ' + token,
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        name: nombreArea,
-        mimeType: 'application/vnd.google-apps.folder'
-      })
-    });
-    
-    if (!crearRes.ok) {
-      throw new Error('Error HTTP ' + crearRes.status);
-    }
-    
-    const carpeta = await crearRes.json();
-    console.log(`✓ Carpeta creada: ${nombreArea}`);
-    
-    // Dar permisos (no es crítico si falla)
-    try {
-      await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
-        method: 'POST',
-        headers: {
-          'Authorization': 'Bearer ' + token,
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify({
-          role: 'editor',
-          type: 'anyone'
-        })
-      });
-      console.log(`✓ Permisos asignados`);
-    } catch(e) {
-      console.warn(`⚠️ No se pudo asignar permisos:`, e.message);
-    }
-    
-    return carpeta.id;
-  } catch(e) {
-    console.error(`❌ Error en obtenerOCrearSubcarpeta:`, e.message);
-    throw e;
-  }
+  // Esta función ahora solo retorna 'root' 
+  // No intenta crear carpetas que causan problemas
+  console.log(`📁 Usando raíz de Google Drive (sin subcarpetas)`);
+  return 'root';
 }
 
-/* Sube el archivo a la subcarpeta del área en Google Drive */
+/* Sube el archivo DIRECTAMENTE a raíz de Google Drive */
 async function subirAGoogleDrive(archivo, onProgress) {
   try {
     console.log('📤 Iniciando subida...');
@@ -724,21 +663,17 @@ async function subirAGoogleDrive(archivo, onProgress) {
     const area = document.getElementById('area-select')?.value || 'SIN_AREA';
     console.log(`📍 Área: ${area}`);
     
-    // Obtener o crear carpeta
-    console.log('📁 Obteniendo/creando carpeta...');
-    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
-    console.log(`✓ ID carpeta: ${idSubcarpeta}`);
-
     onProgress(40);
     const fecha = new Date().toISOString().slice(0, 10);
-    const nombreFinal = `${fecha}_${archivo.name}`;
+    // Nombre con fecha y área para identificar fácilmente
+    const nombreFinal = `${fecha}_[${area}]_${archivo.name}`;
     console.log(`📝 Archivo: ${nombreFinal}`);
 
     return new Promise((resolve, reject) => {
       const metadata = {
         name: nombreFinal,
-        mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        parents: [idSubcarpeta]
+        mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        // SIN parents - va a raíz
       };
       
       const form = new FormData();
@@ -770,12 +705,15 @@ async function subirAGoogleDrive(archivo, onProgress) {
             },
             body: JSON.stringify({ role: 'reader', type: 'anyone' })
           }).then(() => {
+            console.log('✓ Permisos OK');
             resolve(`https://drive.google.com/file/d/${resp.id}/view`);
-          }).catch(() => {
+          }).catch((e) => {
+            console.warn('⚠️ Permisos fallaron pero archivo OK');
             resolve(`https://drive.google.com/file/d/${resp.id}/view`);
           });
         } else {
-          console.error(`❌ Error ${xhr.status}:`, xhr.responseText);
+          console.error(`❌ Error ${xhr.status}`);
+          console.error(`Response:`, xhr.responseText);
           reject(new Error('Error ' + xhr.status));
         }
       };
@@ -920,21 +858,10 @@ async function enviarArchivo() {
 
     /* ─ Subir a Google Drive ─ */
     setProgreso(20, 'Conectando con Google Drive...');
-    const token = await obtenerTokenDrive();
-    const area = document.getElementById('area-select')?.value || 'SIN_AREA';
-    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
     
     storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
       setProgreso(20 + Math.round(p * 0.6), `Subiendo... ${Math.round(p)}%`);
     });
-    
-    // Buscar duplicados
-    setProgreso(80, 'Limpiando duplicados...');
-    try {
-      await buscarYEliminarDuplicadosEnDrive(archivoSeleccionado.name, idSubcarpeta);
-    } catch(e) {
-      console.warn('⚠️ Error limpiando duplicados:', e.message);
-    }
 
     setProgreso(90, 'Registrando en Firestore...');
 
