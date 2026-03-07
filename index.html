@@ -48,18 +48,37 @@
        VISTA LOGIN
   ═══════════════════════════════ -->
   <div id="vista-login" class="vista vista-login-wrap">
-    <div class="login-hero">
-      <div class="login-hero-ico">
-        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-          <polyline points="17 8 12 3 7 8"/>
-          <line x1="12" y1="3" x2="12" y2="15"/>
-        </svg>
-      </div>
-      <h1 class="login-titulo">Portal de Archivos</h1>
-      <p class="login-sub">SISCTE · Registro de Documentos Excel</p>
-    </div>
     <div class="login-card">
+
+      <!-- Panel izquierdo -->
+      <div class="login-panel-left">
+        <div>
+          <div class="lpl-badge">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Sistema Oficial
+          </div>
+          <div class="lpl-logo">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+              <polyline points="17 8 12 3 7 8"/>
+              <line x1="12" y1="3" x2="12" y2="15"/>
+            </svg>
+          </div>
+          <div class="lpl-title">SISCTE</div>
+          <p class="lpl-sub">Portal de Gestión de Envíos · Comisión de Tránsito del Ecuador</p>
+        </div>
+        <div>
+          <p style="font-size:11px;color:rgba(255,255,255,.5);margin-bottom:8px;">Registro seguro · Confirmación automática · Historial completo</p>
+          <div class="lpl-dots">
+            <div class="lpl-dot active"></div>
+            <div class="lpl-dot"></div>
+            <div class="lpl-dot"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Panel derecho -->
+      <div class="login-panel-right">
 
       <!-- Tabs -->
       <div class="auth-tabs">
@@ -117,11 +136,12 @@
         <button class="btn-primary-full" id="btn-registrar">Crear cuenta</button>
       </div>
 
-      <div class="info-note" style="margin-top:16px">
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-        Al enviar recibirás un correo automático de confirmación como respaldo.
-      </div>
-    </div>
+        <div class="info-note" style="margin-top:16px">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          Al enviar recibirás un correo de confirmación automático.
+        </div>
+      </div><!-- /login-panel-right -->
+    </div><!-- /login-card -->
   </div>
 
   <!-- ═══════════════════════════════
