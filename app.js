@@ -127,9 +127,22 @@ async function initFirebase() {
       if (u) {
         console.log('✓ Usuario autenticado:', u.email);
         usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
+        console.log('📋 Usuario objeto:', usuario);
+        console.log('🔍 ¿Es admin?:', esAdmin());
+        console.log('📝 Email en minúsculas:', usuario.email.toLowerCase());
+        console.log('📝 Admin emails:', ADMIN_EMAILS.map(x => x.toLowerCase()));
+        
         actualizarNav();
-        esAdmin() ? show('nb-subir') : hide('nb-subir');
-        esAdmin() ? show('nb-admin') : hide('nb-admin');
+        
+        if (esAdmin()) {
+          console.log('✅ Mostrando botón ADMIN');
+          show('nb-subir');
+          show('nb-admin');
+        } else {
+          console.log('❌ No es admin, ocultando botón');
+          hide('nb-subir');
+          hide('nb-admin');
+        }
         irSubir();
       } else {
         console.log('Usuario no autenticado, mostrando login');
