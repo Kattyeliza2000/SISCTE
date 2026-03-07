@@ -88,49 +88,62 @@ let _resolveFirebase;
 _firebaseReady = new Promise(res => { _resolveFirebase = res; });
 
 async function initFirebase() {
-  const { initializeApp }
-    = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
-  const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
-    = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-    getRedirectResult, signOut, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    sendPasswordResetEmail, updateProfile }
-    = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
-
-  const app = initializeApp(FIREBASE_CONFIG);
-  db   = getFirestore(app);
-  auth = getAuth(app);
-
-  window._fb = {
-    collection, addDoc, getDocs, orderBy, query, doc, getDoc,
-    GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-    getRedirectResult, signOut, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword,
-    sendPasswordResetEmail, updateProfile
-  };
-
-  // Capturar resultado del redirect de Google si viene de uno
   try {
-    const result = await getRedirectResult(auth);
-    if (result?.user) console.log('Redirect login OK:', result.user.email);
-  } catch(e) { console.warn('Redirect result:', e.message); }
+    console.log('Iniciando Firebase...');
+    const { initializeApp }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
+    const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+      getRedirectResult, signOut, onAuthStateChanged,
+      createUserWithEmailAndPassword, signInWithEmailAndPassword,
+      sendPasswordResetEmail, updateProfile }
+      = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
 
-  onAuthStateChanged(auth, u => {
-    if (u) {
-      usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
-      actualizarNav();
-      esAdmin() ? show('nb-subir') : hide('nb-subir');
-      esAdmin() ? show('nb-admin') : hide('nb-admin');
-      irSubir();
-    } else {
-      usuario = null;
-      actualizarNav();
-      ir('vista-login');
-    }
-  });
+    console.log('Firebase modules cargados, inicializando app...');
+    const app = initializeApp(FIREBASE_CONFIG);
+    db   = getFirestore(app);
+    auth = getAuth(app);
+    console.log('Firebase inicializado correctamente');
 
-  _resolveFirebase(); // Firebase listo — desbloquear login
+    window._fb = {
+      collection, addDoc, getDocs, orderBy, query, doc, getDoc,
+      GoogleAuthProvider, signInWithPopup, signInWithRedirect,
+      getRedirectResult, signOut, onAuthStateChanged,
+      createUserWithEmailAndPassword, signInWithEmailAndPassword,
+      sendPasswordResetEmail, updateProfile
+    };
+
+    // Capturar resultado del redirect de Google si viene de uno
+    try {
+      const result = await getRedirectResult(auth);
+      if (result?.user) {
+        console.log('✓ Redirect login exitoso:', result.user.email);
+      }
+    } catch(e) { console.warn('⚠ Redirect result:', e.message); }
+
+    onAuthStateChanged(auth, u => {
+      if (u) {
+        console.log('✓ Usuario autenticado:', u.email);
+        usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
+        actualizarNav();
+        esAdmin() ? show('nb-subir') : hide('nb-subir');
+        esAdmin() ? show('nb-admin') : hide('nb-admin');
+        irSubir();
+      } else {
+        console.log('Usuario no autenticado, mostrando login');
+        usuario = null;
+        actualizarNav();
+        ir('vista-login');
+      }
+    });
+
+    _resolveFirebase(); // Firebase listo — desbloquear login
+  } catch(e) {
+    console.error('❌ Error inicializando Firebase:', e);
+    toast('Error iniciando sistema: ' + e.message, 'err');
+    _resolveFirebase(); // Desbloquear igualmente para evitar bloqueo
+  }
 }
 
 /* ══════════════════════════════════
@@ -138,25 +151,37 @@ async function initFirebase() {
 ══════════════════════════════════ */
 async function login() {
   try {
+    console.log('Login iniciado...');
     await _firebaseReady; // Esperar a que Firebase esté completamente cargado
+    console.log('Firebase listo, iniciando autenticación de Google...');
+    
     const provider = new window._fb.GoogleAuthProvider();
+    provider.addScope('profile');
+    provider.addScope('email');
+    
     try {
-      // Intentar popup primero (más rápido)
+      console.log('Intentando popup de Google...');
+      toast('Abriendo ventana de Google...', 'ok');
       await window._fb.signInWithPopup(auth, provider);
+      console.log('Login popup exitoso');
     } catch(popupErr) {
+      console.warn('Error popup:', popupErr.code, popupErr.message);
       // Si el popup falla (bloqueado por navegador), usar redirect
       if (popupErr.code === 'auth/popup-blocked' ||
           popupErr.code === 'auth/popup-closed-by-user' ||
           popupErr.code === 'auth/cancelled-popup-request') {
+        console.log('Usando redirect en lugar de popup...');
+        toast('Redirigiendo a Google (popup bloqueado)...', 'ok');
         await window._fb.signInWithRedirect(auth, provider);
       } else {
         throw popupErr;
       }
     }
   } catch(e) {
+    console.error('Error login:', e.code, e.message);
     if (e.code !== 'auth/popup-closed-by-user' &&
         e.code !== 'auth/cancelled-popup-request') {
-      toast('Error al iniciar sesión: ' + (e.message || e.code), 'err');
+      toast('Error: ' + (e.message || e.code), 'err');
     }
   }
 }
@@ -1225,9 +1250,17 @@ function cerrarModalArchivado() {
 
 /* ── Exponer funciones al HTML inline ── */
 window.login                  = login;
+window.loginEmail             = loginEmail;
+window.registrarEmail         = registrarEmail;
+window.olvidoContrasena       = olvidoContrasena;
 window.abrirModalArchivado    = abrirModalArchivado;
 window.irSubir                = irSubir;
 window.cerrarModalArchivado   = cerrarModalArchivado;
 window.seleccionarMesArchivado = seleccionarMesArchivado;
 window.archPaso2              = archPaso2;
 window.descargarMesCompleto   = descargarMesCompleto;
+window.ir                     = ir;
+window.show                   = show;
+window.hide                   = hide;
+window.toast                  = toast;
+window.$                      = $;
