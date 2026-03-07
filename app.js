@@ -905,6 +905,7 @@ function cerrarModalArchivado() {
 
 /* ── Exponer funciones al HTML inline ── */
 window.abrirModalArchivado    = abrirModalArchivado;
+window.irSubir                = irSubir;
 window.cerrarModalArchivado   = cerrarModalArchivado;
 window.seleccionarMesArchivado = seleccionarMesArchivado;
 window.archPaso2              = archPaso2;
