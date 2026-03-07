@@ -109,6 +109,7 @@ async function initFirebase() {
     if (u) {
       usuario = { uid: u.uid, nombre: u.displayName, email: u.email, foto: u.photoURL };
       actualizarNav();
+      show('nb-subir');
       esAdmin() ? show('nb-admin') : hide('nb-admin');
       irSubir();
     } else {
