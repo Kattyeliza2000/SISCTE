@@ -59,7 +59,8 @@ const GDRIVE_CONFIG = {
 };
 
 /* ID de la carpeta raíz ORGANICO-CTE en Google Drive */
-const GDRIVE_ROOT_FOLDER_ID = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
+/* Carpeta raíz en Google Drive - Usa "root" para la raíz de cada usuario */
+const GDRIVE_CARPETA_GENERAL = 'root';
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
@@ -627,60 +628,74 @@ function obtenerTokenDrive(forzarNuevo = false) {
    permiso automático "anyone with link" para que sea
    accesible directamente desde el portal. */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
-  // ── 1. Buscar si ya existe ──
-  const query = encodeURIComponent(
-    `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
-  );
-  const res = await fetch(
-    `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`,
-    { headers: { 'Authorization': 'Bearer ' + token } }
-  );
-  if (!res.ok) throw new Error('Error buscando subcarpeta: ' + res.status);
-  const data = await res.json();
-
-  // Si ya existe → devolver su ID directo, sin crear ni tocar nada
-  if (data.files && data.files.length > 0) {
-    return data.files[0].id;
-  }
-
-  // ── 2. Primera vez: crear la subcarpeta ──
-  const crear = await fetch('https://www.googleapis.com/drive/v3/files', {
-    method: 'POST',
-    headers: {
-      'Authorization': 'Bearer ' + token,
-      'Content-Type': 'application/json'
-    },
-    body: JSON.stringify({
-      name:     nombreArea,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents:  [GDRIVE_CARPETA_GENERAL]
-    })
-  });
-  if (!crear.ok) throw new Error('Error creando subcarpeta: ' + crear.status);
-  const carpeta = await crear.json();
-
-  // ── 3. Dar permiso automático "anyone with link" (reader) ──
-  //    Así cualquier persona con el enlace puede ver/descargar
-  //    sin necesidad de que el admin lo comparta manualmente.
   try {
-    await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
+    // ── 1. Buscar si ya existe ──
+    const query = encodeURIComponent(
+      `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
+    );
+    const res = await fetch(
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name)`,
+      { headers: { 'Authorization': 'Bearer ' + token } }
+    );
+    
+    if (res.ok) {
+      const data = await res.json();
+      // Si ya existe → devolver su ID directo
+      if (data.files && data.files.length > 0) {
+        console.log(`✓ Subcarpeta encontrada: ${nombreArea}`);
+        return data.files[0].id;
+      }
+    }
+
+    // ── 2. Primera vez: crear la subcarpeta ──
+    console.log(`📁 Creando subcarpeta: ${nombreArea}`);
+    const crear = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
         'Authorization': 'Bearer ' + token,
-        'Content-Type':  'application/json'
+        'Content-Type': 'application/json'
       },
       body: JSON.stringify({
-        role: 'reader',
-        type: 'anyone'
+        name:     nombreArea,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents:  [GDRIVE_CARPETA_GENERAL]
       })
     });
-    toast(`📁 Carpeta "${nombreArea}" creada y autorizada ✓`);
-  } catch(e) {
-    // No es crítico si falla el permiso, el archivo igual se sube
-    console.warn('No se pudo asignar permiso automático a la carpeta:', e.message);
-  }
+    
+    if (!crear.ok) {
+      const error = await crear.json();
+      console.error('Error creando carpeta:', error);
+      throw new Error(`Error creando subcarpeta: ${error.error?.message || crear.status}`);
+    }
+    
+    const carpeta = await crear.json();
+    console.log(`✓ Subcarpeta creada: ${carpeta.id}`);
 
-  return carpeta.id;
+    // ── 3. Dar permiso automático "anyone with link" (reader) ──
+    try {
+      await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
+        method: 'POST',
+        headers: {
+          'Authorization': 'Bearer ' + token,
+          'Content-Type':  'application/json'
+        },
+        body: JSON.stringify({
+          role: 'reader',
+          type: 'anyone'
+        })
+      });
+      console.log(`✓ Permisos asignados a ${nombreArea}`);
+      toast(`📁 Carpeta "${nombreArea}" creada ✓`);
+    } catch(e) {
+      // No es crítico si falla el permiso
+      console.warn('Aviso: No se pudo asignar permiso automático:', e.message);
+    }
+
+    return carpeta.id;
+  } catch(e) {
+    console.error('Error en obtenerOCrearSubcarpeta:', e);
+    throw e;
+  }
 }
 
 /* Sube el archivo a ORGANICO-CTE → subcarpeta del área */
