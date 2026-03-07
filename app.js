@@ -88,7 +88,7 @@ async function initFirebase() {
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
   const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+  const { getAuth, GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
 
@@ -98,9 +98,19 @@ async function initFirebase() {
 
   window._fb = {
     collection, addDoc, getDocs, orderBy, query, doc, getDoc,
-    GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+    GoogleAuthProvider, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile
   };
+
+  // Capturar resultado del redirect de Google cuando vuelve la página
+  try {
+    const result = await getRedirectResult(auth);
+    if (result?.user) {
+      // El onAuthStateChanged se encarga de actualizar la UI
+    }
+  } catch(e) {
+    console.warn('Redirect result error:', e.message);
+  }
 
   onAuthStateChanged(auth, u => {
     if (u) {
@@ -123,7 +133,8 @@ async function initFirebase() {
 async function login() {
   try {
     const provider = new window._fb.GoogleAuthProvider();
-    await window._fb.signInWithPopup(auth, provider);
+    await window._fb.signInWithRedirect(auth, provider);
+    // La página se redirige a Google y vuelve automáticamente
   } catch(e) { toast('Error al iniciar sesión: ' + e.message, 'err'); }
 }
 
