@@ -706,16 +706,11 @@ async function subirAGoogleDrive(archivo, onProgress) {
 
   onProgress(15);
 
-  // Obtener o crear (solo primera vez) la subcarpeta del área
-  const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
-
-  onProgress(30);
-
   return new Promise((resolve, reject) => {
     const metadata = {
       name: `${fecha}_${archivo.name}`,
-      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      parents: [idSubcarpeta]
+      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      // CAMBIO: No especificamos 'parents' para subir a la raíz directamente
     };
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
@@ -726,13 +721,15 @@ async function subirAGoogleDrive(archivo, onProgress) {
     xhr.setRequestHeader('Authorization', 'Bearer ' + token);
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) {
-        const p = Math.round(30 + (e.loaded / e.total) * 60);
+        const p = Math.round(15 + (e.loaded / e.total) * 75);
         onProgress(p);
       }
     };
     xhr.onload = () => {
       if (xhr.status === 200) {
         const resp = JSON.parse(xhr.responseText);
+        console.log('✓ Archivo subido a Drive:', resp.id);
+        
         // Dar acceso de lectura a cualquiera con el link
         fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
           method: 'POST',
@@ -782,19 +779,19 @@ async function eliminarArchivoDeGoogleDrive(fileId) {
 }
 
 /* ══════════════════════════════════
-   BUSCAR Y ELIMINAR DUPLICADOS EN DRIVE
+   BUSCAR Y ELIMINAR DUPLICADOS EN DRIVE (RAÍZ)
 ══════════════════════════════════ */
-async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
+async function buscarYEliminarDuplicadosEnRaiz(nombreArchivo) {
   try {
     const token = await obtenerTokenDrive();
     
     // Esperar un poco para asegurar que el archivo se subió completamente
     await new Promise(r => setTimeout(r, 500));
     
-    // Buscar archivos con el mismo nombre
+    // Buscar archivos con el mismo nombre EN LA RAÍZ (sin especificar padre)
     const nombreSinFecha = nombreArchivo;
     const query = encodeURIComponent(
-      `name like '%${nombreSinFecha}%' and '${idSubcarpeta}' in parents and trashed=false`
+      `name like '%${nombreSinFecha}%' and trashed=false`
     );
     
     console.log(`🔍 Buscando duplicados con patrón: %${nombreSinFecha}%`);
@@ -852,7 +849,7 @@ async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
       return [];
     }
   } catch(e) {
-    console.error('❌ Error en buscarYEliminarDuplicadosEnDrive:', e);
+    console.error('❌ Error en buscarYEliminarDuplicadosEnRaiz:', e);
     return [];
   }
 }
@@ -883,20 +880,17 @@ async function enviarArchivo() {
     /* ─ Todos los archivos van a Google Drive ─ */
     setProgreso(20, 'Conectando con Google Drive...');
     const token = await obtenerTokenDrive();
-    const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
-    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
     
     storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
       setProgreso(20 + Math.round(p * 0.6), `Subiendo a Drive... ${p}%`);
     });
     
-    // NUEVO: Buscar y eliminar duplicados en Google Drive
+    // NUEVO: Buscar y eliminar duplicados en Google Drive (sin subcarpeta, en raíz)
     console.log('🔄 Iniciando búsqueda de duplicados en Drive...');
     setProgreso(75, 'Limpiando archivos duplicados...');
     try {
-      const duplicadosEliminados = await buscarYEliminarDuplicadosEnDrive(
-        archivoSeleccionado.name,
-        idSubcarpeta
+      const duplicadosEliminados = await buscarYEliminarDuplicadosEnRaiz(
+        archivoSeleccionado.name
       );
       console.log(`✓ Duplicados eliminados de Drive: ${duplicadosEliminados.length}`);
     } catch(e) {
