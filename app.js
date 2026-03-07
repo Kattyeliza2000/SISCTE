@@ -85,7 +85,8 @@ async function initFirebase() {
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js");
   const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-  const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
   const { getStorage, ref, uploadBytesResumable, getDownloadURL }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js");
@@ -98,6 +99,7 @@ async function initFirebase() {
   window._fb = {
     collection, addDoc, getDocs, orderBy, query, doc, getDoc,
     GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile,
     ref, uploadBytesResumable, getDownloadURL
   };
 
@@ -143,6 +145,59 @@ async function login() {
 async function logout() {
   try { await window._fb.signOut(auth); } catch(e) {}
 }
+
+async function loginEmail() {
+  const email = document.getElementById('login-email')?.value?.trim();
+  const pass  = document.getElementById('login-pass')?.value;
+  if (!email || !pass) { toast('Ingresa correo y contraseña','err'); return; }
+  try {
+    await window._fb.signInWithEmailAndPassword(auth, email, pass);
+  } catch(e) {
+    const msg = e.code === 'auth/invalid-credential' ? 'Correo o contraseña incorrectos'
+              : e.code === 'auth/user-not-found'     ? 'No existe una cuenta con ese correo'
+              : e.code === 'auth/wrong-password'     ? 'Contraseña incorrecta'
+              : 'Error: ' + e.message;
+    toast(msg, 'err');
+  }
+}
+
+async function registrarEmail() {
+  const nombre = document.getElementById('reg-nombre')?.value?.trim();
+  const email  = document.getElementById('reg-email')?.value?.trim();
+  const pass   = document.getElementById('reg-pass')?.value;
+  if (!nombre) { toast('Ingresa tu nombre completo','err'); return; }
+  if (!email)  { toast('Ingresa tu correo','err'); return; }
+  if (!pass || pass.length < 6) { toast('La contraseña debe tener al menos 6 caracteres','err'); return; }
+  try {
+    const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
+    await window._fb.updateProfile(cred.user, { displayName: nombre });
+    toast('Cuenta creada exitosamente ✓');
+  } catch(e) {
+    const msg = e.code === 'auth/email-already-in-use' ? 'Ya existe una cuenta con ese correo'
+              : e.code === 'auth/invalid-email'        ? 'Correo no válido'
+              : e.code === 'auth/weak-password'        ? 'La contraseña es muy débil'
+              : 'Error: ' + e.message;
+    toast(msg, 'err');
+  }
+}
+
+async function olvidoContrasena() {
+  const email = document.getElementById('login-email')?.value?.trim();
+  if (!email) { toast('Ingresa primero tu correo en el campo de arriba','err'); return; }
+  try {
+    await window._fb.sendPasswordResetEmail(auth, email);
+    toast('Correo de recuperación enviado — revisa tu bandeja ✓');
+  } catch(e) {
+    toast('No se encontró una cuenta con ese correo','err');
+  }
+}
+
+window.switchTab = function(tab) {
+  document.getElementById('panel-login').style.display    = tab==='login'    ? 'block' : 'none';
+  document.getElementById('panel-registro').style.display = tab==='registro' ? 'block' : 'none';
+  document.getElementById('tab-login').classList.toggle('active',    tab==='login');
+  document.getElementById('tab-registro').classList.toggle('active', tab==='registro');
+};
 
 const esAdmin = () =>
   usuario && ADMIN_EMAILS.map(x => x.toLowerCase()).includes(usuario.email.toLowerCase());
@@ -277,6 +332,9 @@ document.addEventListener('DOMContentLoaded', () => {
   poblarAreas('filtro-area', 'Todas las áreas');
 
   $('btn-google').addEventListener('click', login);
+  document.getElementById('btn-login-email')?.addEventListener('click', loginEmail);
+  document.getElementById('btn-registrar')?.addEventListener('click', registrarEmail);
+  document.getElementById('btn-forgot')?.addEventListener('click', olvidoContrasena);
   document.querySelectorAll('.btn-logout').forEach(b => b.addEventListener('click', logout));
   $('nb-subir').addEventListener('click', () => usuario ? irSubir() : ir('vista-login'));
   $('nb-admin').addEventListener('click', () => { if(esAdmin()){ ir('vista-admin'); cargarAdmin(); } });
@@ -360,6 +418,7 @@ async function enviarArchivo() {
   if (!archivoSeleccionado){ toast('Selecciona un archivo primero','err'); return; }
   const areaVal = $('area-select').value;
   if (!areaVal){ toast('Debes seleccionar tu área antes de enviar','err'); return; }
+  const detalleVal = ($('detalle-envio')?.value||'').trim();
 
   const btn = $('btn-enviar');
   btn.disabled = true;
@@ -436,6 +495,7 @@ async function enviarArchivo() {
       archivoBase64,
       comprimido:       (metodo==='firestore_comprimido' && !!window.pako),
       mimeType:         archivoSeleccionado.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      detalle:          detalleVal,
       fechaTexto,
       horaTexto,
       timestamp:        ahora.toISOString()
@@ -545,7 +605,7 @@ function renderAdmin(docs) {
 
   /* Tabla */
   $('tabla-body').innerHTML = docs.length===0
-    ? `<tr><td colspan="8" class="td-vacio">No hay registros para los filtros aplicados</td></tr>`
+    ? `<tr><td colspan="9" class="td-vacio">No hay registros para los filtros aplicados</td></tr>`
     : docs.map((d,i)=>`
         <tr class="${d.archivado?'tr-archivado':''}">
           <td class="td-n">${i+1}</td>
@@ -555,6 +615,7 @@ function renderAdmin(docs) {
           </div></td>
           <td><span class="badge-area">${d.area||'—'}</span></td>
           <td class="td-arch">${renderDescarga(d)}</td>
+          <td class="td-detalle" title="${d.detalle||'—'}">${d.detalle ? (d.detalle.length>40 ? d.detalle.slice(0,40)+'…' : d.detalle) : '<span style="color:#9ca3af">—</span>'}</td>
           <td class="td-peso">${d.tamanoTexto||'—'}${d.tamanoComprimido?`<div class="td-comprimido">gzip: ${d.tamanoComprimido}</div>`:''}</td>
           <td class="td-fecha">${d.fechaTexto}</td>
           <td class="td-hora">${d.horaTexto}</td>
@@ -643,6 +704,7 @@ async function exportarExcel(docs, filtrado=false){
     'Correo':d.email||'—',
     'Área':d.area||'—',
     'Archivo':d.nombreArchivo||'—',
+    'Descripción':d.detalle||'—',
     'Peso':d.tamanoTexto||'—',
     'Fecha':d.fechaTexto||'—',
     'Hora':d.horaTexto||'—',
@@ -650,7 +712,7 @@ async function exportarExcel(docs, filtrado=false){
   }));
   const wb=XLSX.utils.book_new();
   const ws=XLSX.utils.json_to_sheet(filas);
-  ws['!cols']=[{wch:4},{wch:28},{wch:34},{wch:22},{wch:38},{wch:12},{wch:22},{wch:14},{wch:12}];
+  ws['!cols']=[{wch:4},{wch:28},{wch:34},{wch:22},{wch:38},{wch:40},{wch:12},{wch:22},{wch:14},{wch:12}];
   XLSX.utils.book_append_sheet(wb,ws,'Entregas');
   XLSX.writeFile(wb,`informe_SISCTE${filtrado?'_filtrado':'_completo'}_${new Date().toISOString().slice(0,10)}.xlsx`);
   toast(`Informe${filtrado?' filtrado':''} descargado ✓`);
