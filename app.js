@@ -152,34 +152,35 @@ async function initFirebase() {
 ══════════════════════════════════ */
 async function login() {
   try {
-    console.log('Login iniciado...');
+    console.log('🔓 Iniciando login con Google...');
     await _firebaseReady; // Esperar a que Firebase esté completamente cargado
-    console.log('Firebase listo, iniciando autenticación de Google...');
+    console.log('✓ Firebase listo');
     
     const provider = new window._fb.GoogleAuthProvider();
     provider.addScope('profile');
     provider.addScope('email');
     
     try {
-      console.log('Intentando popup de Google...');
+      console.log('📱 Intentando popup de Google...');
       toast('Abriendo ventana de Google...', 'ok');
       await window._fb.signInWithPopup(auth, provider);
-      console.log('Login popup exitoso');
+      console.log('✓ Login popup exitoso');
     } catch(popupErr) {
-      console.warn('Error popup:', popupErr.code, popupErr.message);
+      console.warn('⚠️ Error popup:', popupErr.code, popupErr.message);
       // Si el popup falla (bloqueado por navegador), usar redirect
       if (popupErr.code === 'auth/popup-blocked' ||
           popupErr.code === 'auth/popup-closed-by-user' ||
           popupErr.code === 'auth/cancelled-popup-request') {
-        console.log('Usando redirect en lugar de popup...');
+        console.log('🔄 Popup bloqueado, usando redirect...');
         toast('Redirigiendo a Google (popup bloqueado)...', 'ok');
         await window._fb.signInWithRedirect(auth, provider);
       } else {
+        console.error('❌ Error en popup:', popupErr);
         throw popupErr;
       }
     }
   } catch(e) {
-    console.error('Error login:', e.code, e.message);
+    console.error('❌ Error en login:', e.code || e.message);
     if (e.code !== 'auth/popup-closed-by-user' &&
         e.code !== 'auth/cancelled-popup-request') {
       toast('Error: ' + (e.message || e.code), 'err');
@@ -579,9 +580,6 @@ function setProgreso(pct, label) {
      las siguientes subidas van directo a la existente
 ══════════════════════════════════ */
 
-/* ID fijo de tu carpeta ORGANICO-CTE en Google Drive */
-const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
-
 /* Caché del token con expiración — evita pedir autorización
    en cada envío pero renueva si ha pasado más de 45 minutos */
 let _driveTokenCache = null;
@@ -591,35 +589,59 @@ let _driveTokenExpiry = 0;
 function obtenerTokenDrive(forzarNuevo = false) {
   // Si hay token válido en caché y no forzamos renovación, reutilizarlo
   if (!forzarNuevo && _driveTokenCache && Date.now() < _driveTokenExpiry) {
+    console.log('✓ Usando token cacheado');
     return Promise.resolve(_driveTokenCache);
   }
 
+  console.log('🔑 Solicitando nuevo token de Google Drive...');
+  
   return new Promise((resolve, reject) => {
     const cargarGIS = () => new Promise((res, rej) => {
-      if (window.google?.accounts?.oauth2) { res(); return; }
+      if (window.google?.accounts?.oauth2) {
+        console.log('✓ Google Identity Services ya cargado');
+        res();
+        return;
+      }
+      console.log('📥 Cargando Google Identity Services...');
       const s = document.createElement('script');
       s.src = 'https://accounts.google.com/gsi/client';
-      s.onload = res; s.onerror = rej;
+      s.onload = () => {
+        console.log('✓ Google Identity Services cargado');
+        res();
+      };
+      s.onerror = () => {
+        console.error('❌ Error cargando Google Identity Services');
+        rej(new Error('No se pudo cargar Google Identity Services'));
+      };
       document.head.appendChild(s);
     });
 
     cargarGIS().then(() => {
+      console.log('🔐 Inicializando cliente OAuth...');
       const client = google.accounts.oauth2.initTokenClient({
         client_id: GDRIVE_CONFIG.clientId,
         scope: GDRIVE_CONFIG.scope,
         callback: (resp) => {
+          console.log('📨 Respuesta del servidor:', resp.error ? 'ERROR' : 'OK');
           if (resp.error) {
+            console.error('❌ Error de autorización:', resp.error);
             reject(new Error('Error de autorización: ' + resp.error));
           } else {
+            console.log('✓ Token obtenido exitosamente');
             // Guardar en caché por 45 minutos (tokens duran 1h)
             _driveTokenCache  = resp.access_token;
             _driveTokenExpiry = Date.now() + 45 * 60 * 1000;
+            toast('✓ Conectado a Google Drive');
             resolve(resp.access_token);
           }
         }
       });
+      console.log('🎯 Solicitando acceso...');
       client.requestAccessToken();
-    }).catch(() => reject(new Error('No se pudo cargar Google Identity Services. Verifica tu conexión.')));
+    }).catch((e) => {
+      console.error('❌ Error:', e.message);
+      reject(new Error('No se pudo cargar Google Identity Services. Verifica tu conexión.'));
+    });
   });
 }
 
