@@ -773,58 +773,75 @@ async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
   try {
     const token = await obtenerTokenDrive();
     
-    // Buscar archivos con el mismo nombre (sin considerar la fecha)
-    // Por ejemplo, si sube "reporte.xlsx", buscar todos los que terminen con "reporte.xlsx"
+    // Esperar un poco para asegurar que el archivo se subió completamente
+    await new Promise(r => setTimeout(r, 500));
+    
+    // Buscar archivos con el mismo nombre
     const nombreSinFecha = nombreArchivo;
     const query = encodeURIComponent(
       `name like '%${nombreSinFecha}%' and '${idSubcarpeta}' in parents and trashed=false`
     );
     
+    console.log(`🔍 Buscando duplicados con patrón: %${nombreSinFecha}%`);
+    
     const response = await fetch(
-      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime)`,
+      `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime desc`,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
     
     if (!response.ok) {
-      console.warn('Error buscando duplicados en Drive:', response.status);
+      console.warn('⚠️ Error buscando duplicados en Drive:', response.status);
       return [];
     }
     
     const data = await response.json();
     const archivosEncontrados = data.files || [];
-    console.log(`🔍 Archivos encontrados en Drive con nombre similar: ${archivosEncontrados.length}`);
+    console.log(`✓ Archivos encontrados: ${archivosEncontrados.length}`);
     
-    // Eliminar todos EXCEPTO el más nuevo (que es el que acabamos de subir)
-    if (archivosEncontrados.length > 1) {
-      // Ordenar por fecha (más recientes primero)
-      archivosEncontrados.sort((a, b) => 
-        new Date(b.createdTime) - new Date(a.createdTime)
-      );
-      
-      // Eliminar todos excepto el primero (el más reciente)
-      const archivosAEliminar = archivosEncontrados.slice(1);
-      console.log(`🗑️ Eliminando ${archivosAEliminar.length} archivos duplicados de Drive`);
-      
-      for (const archivo of archivosAEliminar) {
-        try {
-          const resultado = await eliminarArchivoDeGoogleDrive(archivo.id);
-          if (resultado) {
-            console.log(`✓ Eliminado: ${archivo.name}`);
-          }
-        } catch(e) {
-          console.warn(`⚠️ No se pudo eliminar: ${archivo.name}`, e);
-        }
-      }
-      
-      return archivosAEliminar;
+    if (archivosEncontrados.length > 0) {
+      archivosEncontrados.forEach((f, i) => {
+        console.log(`  ${i}: ${f.name} (creado: ${f.createdTime})`);
+      });
     }
     
-    return [];
+    // Eliminar todos EXCEPTO el primero (el más reciente)
+    if (archivosEncontrados.length > 1) {
+      const archivosAEliminar = archivosEncontrados.slice(1);
+      console.log(`\n🗑️ Eliminando ${archivosAEliminar.length} archivos duplicados...`);
+      
+      let eliminadosExitosamente = 0;
+      for (const archivo of archivosAEliminar) {
+        try {
+          console.log(`  Eliminando: ${archivo.name} (ID: ${archivo.id})`);
+          const resultado = await eliminarArchivoDeGoogleDrive(archivo.id);
+          if (resultado) {
+            console.log(`  ✓ Eliminado exitosamente`);
+            eliminadosExitosamente++;
+          } else {
+            console.warn(`  ✗ No se eliminó (estado de respuesta inválido)`);
+          }
+        } catch(e) {
+          console.error(`  ✗ Error: ${e.message}`);
+        }
+        // Pequeño delay entre eliminaciones
+        await new Promise(r => setTimeout(r, 200));
+      }
+      
+      console.log(`\n✓ Proceso completado: ${eliminadosExitosamente}/${archivosAEliminar.length} eliminados`);
+      return archivosAEliminar;
+    } else if (archivosEncontrados.length === 1) {
+      console.log('✓ Solo existe 1 archivo, no hay duplicados');
+      return [];
+    } else {
+      console.warn('⚠️ No se encontraron archivos con ese nombre');
+      return [];
+    }
   } catch(e) {
-    console.error('Error en buscarYEliminarDuplicadosEnDrive:', e);
+    console.error('❌ Error en buscarYEliminarDuplicadosEnDrive:', e);
     return [];
   }
 }
+
 
 /* ══════════════════════════════════
    ENVIAR ARCHIVO — ESTRATEGIA DUAL
@@ -850,20 +867,26 @@ async function enviarArchivo() {
 
     /* ─ Todos los archivos van a Google Drive ─ */
     setProgreso(20, 'Conectando con Google Drive...');
+    const token = await obtenerTokenDrive();
     const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
-    const idSubcarpeta = await obtenerOCrearSubcarpeta(await obtenerTokenDrive(), area);
+    const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
     
     storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
       setProgreso(20 + Math.round(p * 0.6), `Subiendo a Drive... ${p}%`);
     });
     
     // NUEVO: Buscar y eliminar duplicados en Google Drive
+    console.log('🔄 Iniciando búsqueda de duplicados en Drive...');
     setProgreso(75, 'Limpiando archivos duplicados...');
-    const duplicadosEliminados = await buscarYEliminarDuplicadosEnDrive(
-      archivoSeleccionado.name,
-      idSubcarpeta
-    );
-    console.log(`Duplicados eliminados de Drive: ${duplicadosEliminados.length}`);
+    try {
+      const duplicadosEliminados = await buscarYEliminarDuplicadosEnDrive(
+        archivoSeleccionado.name,
+        idSubcarpeta
+      );
+      console.log(`✓ Duplicados eliminados de Drive: ${duplicadosEliminados.length}`);
+    } catch(e) {
+      console.error('⚠️ Error al buscar duplicados:', e);
+    }
 
     setProgreso(80,'Registrando en Firestore...');
 
