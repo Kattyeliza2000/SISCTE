@@ -63,7 +63,8 @@ const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
-  "iastudillol@unemi.edu.ec"
+  "iastudillol@unemi.edu.ec",
+  "ky211209@gmail.com"
 ];
 
 const AREAS = [
