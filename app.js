@@ -128,6 +128,9 @@ async function login() {
 }
 
 async function logout() {
+  // Limpiar caché del token de Drive al cerrar sesión
+  _driveTokenCache  = null;
+  _driveTokenExpiry = 0;
   try { await window._fb.signOut(auth); } catch(e) {}
 }
 
@@ -282,15 +285,32 @@ function poblarAreas(selectId, placeholder='— Selecciona tu área —') {
    VISTA SUBIR
 ══════════════════════════════════ */
 function irSubir() {
+  // Limpiar estado del archivo
   archivoSeleccionado = null;
-  $('dropzone').style.display = 'flex';
+
+  // CRÍTICO: resetear el input file para que el evento change
+  // se dispare incluso si el usuario selecciona el mismo archivo
+  const fi = $('file-input');
+  if (fi) fi.value = '';
+
+  // Limpiar UI del formulario
+  $('dropzone').style.display    = 'flex';
   $('file-preview').style.display = 'none';
   $('progress-wrap').style.display = 'none';
   $('area-select').value = '';
   const det = $('detalle-envio'); if (det) det.value = '';
+
+  // Limpiar barra de progreso
+  const bar = $('progress-bar');
+  if (bar) bar.style.width = '0%';
+  const ptxt = $('progress-txt');
+  if (ptxt) ptxt.textContent = '0%';
+
   resetBtn();
+
   const heroNombre = $('hero-nombre');
-  if (heroNombre) heroNombre.textContent = usuario.nombre || usuario.email;
+  if (heroNombre) heroNombre.textContent = usuario?.nombre || usuario?.email || '';
+
   ir('vista-subir');
   cargarMisEnvios();
 }
@@ -431,8 +451,18 @@ function setProgreso(pct, label) {
 /* ID fijo de tu carpeta ORGANICO-CTE en Google Drive */
 const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
+/* Caché del token con expiración — evita pedir autorización
+   en cada envío pero renueva si ha pasado más de 45 minutos */
+let _driveTokenCache = null;
+let _driveTokenExpiry = 0;
+
 /* Obtener token OAuth2 usando Google Identity Services */
-function obtenerTokenDrive() {
+function obtenerTokenDrive(forzarNuevo = false) {
+  // Si hay token válido en caché y no forzamos renovación, reutilizarlo
+  if (!forzarNuevo && _driveTokenCache && Date.now() < _driveTokenExpiry) {
+    return Promise.resolve(_driveTokenCache);
+  }
+
   return new Promise((resolve, reject) => {
     const cargarGIS = () => new Promise((res, rej) => {
       if (window.google?.accounts?.oauth2) { res(); return; }
@@ -450,6 +480,9 @@ function obtenerTokenDrive() {
           if (resp.error) {
             reject(new Error('Error de autorización: ' + resp.error));
           } else {
+            // Guardar en caché por 45 minutos (tokens duran 1h)
+            _driveTokenCache  = resp.access_token;
+            _driveTokenExpiry = Date.now() + 45 * 60 * 1000;
             resolve(resp.access_token);
           }
         }
@@ -460,10 +493,11 @@ function obtenerTokenDrive() {
 }
 
 /* Busca la subcarpeta del área dentro de ORGANICO-CTE.
-   Si no existe todavía, la crea una sola vez.
-   Devuelve el ID de la subcarpeta. */
+   Si no existe todavía, la crea UNA SOLA VEZ y le da
+   permiso automático "anyone with link" para que sea
+   accesible directamente desde el portal. */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
-  // Buscar si ya existe la subcarpeta con ese nombre
+  // ── 1. Buscar si ya existe ──
   const query = encodeURIComponent(
     `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
   );
@@ -474,12 +508,12 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
   if (!res.ok) throw new Error('Error buscando subcarpeta: ' + res.status);
   const data = await res.json();
 
-  // Si ya existe, devolver su ID directamente (no crear nada)
+  // Si ya existe → devolver su ID directo, sin crear ni tocar nada
   if (data.files && data.files.length > 0) {
     return data.files[0].id;
   }
 
-  // Primera vez: crear la subcarpeta dentro de ORGANICO-CTE
+  // ── 2. Primera vez: crear la subcarpeta ──
   const crear = await fetch('https://www.googleapis.com/drive/v3/files', {
     method: 'POST',
     headers: {
@@ -487,13 +521,35 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
       'Content-Type': 'application/json'
     },
     body: JSON.stringify({
-      name: nombreArea,
+      name:     nombreArea,
       mimeType: 'application/vnd.google-apps.folder',
-      parents: [GDRIVE_CARPETA_GENERAL]
+      parents:  [GDRIVE_CARPETA_GENERAL]
     })
   });
   if (!crear.ok) throw new Error('Error creando subcarpeta: ' + crear.status);
   const carpeta = await crear.json();
+
+  // ── 3. Dar permiso automático "anyone with link" (reader) ──
+  //    Así cualquier persona con el enlace puede ver/descargar
+  //    sin necesidad de que el admin lo comparta manualmente.
+  try {
+    await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
+      method: 'POST',
+      headers: {
+        'Authorization': 'Bearer ' + token,
+        'Content-Type':  'application/json'
+      },
+      body: JSON.stringify({
+        role: 'reader',
+        type: 'anyone'
+      })
+    });
+    toast(`📁 Carpeta "${nombreArea}" creada y autorizada ✓`);
+  } catch(e) {
+    // No es crítico si falla el permiso, el archivo igual se sube
+    console.warn('No se pudo asignar permiso automático a la carpeta:', e.message);
+  }
+
   return carpeta.id;
 }
 
