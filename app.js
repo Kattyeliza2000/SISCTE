@@ -806,10 +806,18 @@ async function enviarArchivo() {
     );
     const snapDup = await window._fb.getDocs(qDup);
     
+    console.log(`✓ Búsqueda de duplicados: ${snapDup.docs.length} registros encontrados`);
+    
     // Eliminar los duplicados anteriores (mismo nombre + misma área)
     const archivosAEliminar = [];
     for (const docSnap of snapDup.docs) {
       const data = docSnap.data();
+      console.log('🗑️ Eliminando duplicado:', {
+        id: docSnap.id,
+        nombreArchivo: data.nombreArchivo,
+        driveFileId: data.driveFileId
+      });
+      
       if (data.driveFileId) {
         // Guardar el ID del archivo de Drive para eliminarlo
         archivosAEliminar.push(data.driveFileId);
@@ -820,17 +828,23 @@ async function enviarArchivo() {
     
     // Eliminar los archivos antiguos de Google Drive
     if (archivosAEliminar.length > 0) {
-      console.log('Eliminando archivos antiguos de Drive:', archivosAEliminar);
+      console.log('🗑️ Eliminando archivos de Google Drive:', archivosAEliminar);
       for (const fileId of archivosAEliminar) {
         try {
-          await eliminarArchivoDeGoogleDrive(fileId);
+          const resultado = await eliminarArchivoDeGoogleDrive(fileId);
+          if (resultado) {
+            console.log('✓ Archivo de Drive eliminado:', fileId);
+          } else {
+            console.warn('⚠️ No se pudo eliminar de Drive:', fileId);
+          }
         } catch(e) {
-          console.warn('No se pudo eliminar archivo de Drive:', e);
+          console.error('❌ Error eliminando archivo:', fileId, e);
         }
       }
     }
     
     const fueReemplazo = snapDup.docs.length > 0;
+    console.log('Resultado: fueReemplazo =', fueReemplazo);
 
     // Extraer el driveFileId del storageURL (formato: https://drive.google.com/file/d/{fileId}/view)
     let driveFileId = null;
