@@ -1,12 +1,10 @@
 /* ══════════════════════════════════════════════════════════
-   PORTAL SISCTE — app.js  v3.0
-   ─ Estrategia dual de almacenamiento:
-     • Archivos ≤ 800 KB originales  → comprimidos con pako
-       (gzip) y guardados en Firestore como base64 (~60% menos)
-     • Archivos > 800 KB originales  → Firebase Storage
-       (requiere CORS configurado en tu bucket)
-   ─ CORS fix documentado abajo
+   PORTAL SISCTE — app.js  v4.0
+   ─ Almacenamiento: todos los archivos → Google Drive
+     (carpeta por área, se crea automáticamente)
+   ─ Firestore: solo guarda metadatos (nombre, área, fecha…)
    ─ EmailJS para correo de confirmación al usuario
+   ─ PDF comprobante descargado automáticamente al enviar
    ─ Panel admin con filtros y exportación Excel filtrada
 ══════════════════════════════════════════════════════════ */
 
@@ -54,7 +52,7 @@ const EMAILJS_CONFIG = {
   templateId: "template_8d6u82j"
 };
 
-/* Google Drive API para archivos grandes */
+/* Google Drive API — todos los archivos se suben aquí */
 const GDRIVE_CONFIG = {
   clientId: '270864419518-qi6hia7bu9012til3b0fhn13tct81feu.apps.googleusercontent.com',
   scope: 'https://www.googleapis.com/auth/drive'
@@ -62,9 +60,6 @@ const GDRIVE_CONFIG = {
 
 /* ID de la carpeta raíz ORGANICO-CTE en Google Drive */
 const GDRIVE_ROOT_FOLDER_ID = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
-
-/* Archivos menores a este umbral van a Firestore comprimido */
-const UMBRAL_BYTES = 800 * 1024;
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
@@ -84,7 +79,6 @@ const AREAS = [
 let db, auth, storage, usuario = null;
 let archivoSeleccionado = null;
 let docsAdmin = [];
-let pakoListo = false;
 
 /* ══════════════════════════════════
    FIREBASE INIT
@@ -97,22 +91,16 @@ async function initFirebase() {
   const { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
     createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile }
     = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
-  const { getStorage, ref, uploadBytesResumable, getDownloadURL }
-    = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-storage.js");
 
   const app = initializeApp(FIREBASE_CONFIG);
   db = getFirestore(app);
   auth = getAuth(app);
-  storage = getStorage(app);
 
   window._fb = {
     collection, addDoc, getDocs, orderBy, query, doc, getDoc,
     GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged,
-    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile,
-    ref, uploadBytesResumable, getDownloadURL
+    createUserWithEmailAndPassword, signInWithEmailAndPassword, sendPasswordResetEmail, updateProfile
   };
-
-  cargarPako();
 
   onAuthStateChanged(auth, u => {
     if (u) {
@@ -127,19 +115,6 @@ async function initFirebase() {
       ir('vista-login');
     }
   });
-}
-
-async function cargarPako() {
-  if (window.pako) { pakoListo = true; return; }
-  try {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-    pakoListo = true;
-  } catch(e) { console.warn('pako no disponible'); }
 }
 
 /* ══════════════════════════════════
@@ -410,11 +385,8 @@ function seleccionar(f) {
   archivoSeleccionado = f;
   $('fp-nombre').textContent = f.name;
   $('fp-peso').textContent   = formatSize(f.size);
-  const modo = f.size <= UMBRAL_BYTES
-    ? '⚡ Se guardará comprimido (sin CORS)'
-    : '☁️ Google Drive (archivo grande)';
   const modoEl = $('fp-modo');
-  if (modoEl) modoEl.textContent = modo;
+  if (modoEl) modoEl.textContent = '☁️ Google Drive';
   $('dropzone').style.display     = 'none';
   $('file-preview').style.display = 'flex';
 }
@@ -603,65 +575,58 @@ async function enviarArchivo() {
     const fechaTexto = ahora.toLocaleDateString('es-EC',{timeZone:'America/Guayaquil',day:'2-digit',month:'long',year:'numeric'});
     const horaTexto  = ahora.toLocaleTimeString('es-EC',{timeZone:'America/Guayaquil',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
-    let metodo, storageURL=null, archivoBase64=null, tamComp=null;
+    let storageURL = null;
 
-    /* ─ Firestore comprimido para archivos pequeños ─ */
-    if (archivoSeleccionado.size <= UMBRAL_BYTES) {
-      metodo = 'firestore_comprimido';
-      setProgreso(20,'Leyendo archivo...');
-      const buffer = await fileToArrayBuffer(archivoSeleccionado);
-      setProgreso(40,'Comprimiendo con gzip...');
-
-      if (!pakoListo) await cargarPako();
-      if (window.pako) {
-        const comp = window.pako.gzip(new Uint8Array(buffer));
-        archivoBase64 = arrayBufferToBase64(comp);
-        tamComp = formatSize(comp.length);
-        setProgreso(65,`Comprimido → ${tamComp}`);
-      } else {
-        archivoBase64 = arrayBufferToBase64(buffer);
-        setProgreso(65,'Listo para guardar...');
-      }
-
-    /* ─ Google Drive para archivos grandes ─ */
-    } else {
-      metodo = 'google_drive';
-      setProgreso(20, 'Conectando con Google Drive...');
-      storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
-        setProgreso(p, `Subiendo a Drive... ${p}%`);
-      });
-    }
+    /* ─ Todos los archivos van a Google Drive ─ */
+    setProgreso(20, 'Conectando con Google Drive...');
+    storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
+      setProgreso(20 + Math.round(p * 0.6), `Subiendo a Drive... ${p}%`);
+    });
 
     setProgreso(80,'Registrando en Firestore...');
 
     await window._fb.addDoc(window._fb.collection(db,'entregas'),{
-      uid:              usuario.uid,
-      nombre:           usuario.nombre,
-      email:            usuario.email,
-      foto:             usuario.foto,
-      area:             areaVal,
-      nombreArchivo:    archivoSeleccionado.name,
-      tamanoBytes:      archivoSeleccionado.size,
-      tamanoTexto:      formatSize(archivoSeleccionado.size),
-      tamanoComprimido: tamComp,
-      metodo,
+      uid:           usuario.uid,
+      nombre:        usuario.nombre,
+      email:         usuario.email,
+      foto:          usuario.foto,
+      area:          areaVal,
+      nombreArchivo: archivoSeleccionado.name,
+      tamanoBytes:   archivoSeleccionado.size,
+      tamanoTexto:   formatSize(archivoSeleccionado.size),
+      metodo:        'google_drive',
       storageURL,
-      archivoBase64,
-      comprimido:       (metodo==='firestore_comprimido' && !!window.pako),
-      mimeType:         archivoSeleccionado.type||'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-      detalle:          detalleVal,
+      detalle:       detalleVal,
       fechaTexto,
       horaTexto,
-      timestamp:        ahora.toISOString()
+      timestamp:     ahora.toISOString()
     });
 
     setProgreso(100,'¡Completado!');
     mostrarExito(areaVal, fechaTexto, horaTexto);
+
+    const numRegistro = 'SISCTE-' + Date.now().toString(36).toUpperCase();
+
+    generarComprobantePDF({
+      nombre:   usuario.nombre,
+      email:    usuario.email,
+      area:     areaVal,
+      archivo:  archivoSeleccionado.name,
+      tamano:   formatSize(archivoSeleccionado.size),
+      fecha:    fechaTexto,
+      hora:     horaTexto,
+      registro: numRegistro
+    });
+
     enviarCorreoNotificacion({
-      nombre:  usuario.nombre, email: usuario.email,
-      area:    areaVal, archivo: archivoSeleccionado.name,
-      tamano:  formatSize(archivoSeleccionado.size),
-      fecha:   fechaTexto, hora: horaTexto
+      nombre:   usuario.nombre,
+      email:    usuario.email,
+      area:     areaVal,
+      archivo:  archivoSeleccionado.name,
+      tamano:   formatSize(archivoSeleccionado.size),
+      fecha:    fechaTexto,
+      hora:     horaTexto,
+      registro: numRegistro
     });
     setTimeout(() => ir('vista-exito'), 500);
 
@@ -685,6 +650,126 @@ function mostrarExito(area, fecha, hora) {
 }
 
 /* ══════════════════════════════════
+   COMPROBANTE PDF — se descarga
+   automáticamente al enviar
+══════════════════════════════════ */
+async function generarComprobantePDF(d) {
+  try {
+    if (!window.jspdf) {
+      await new Promise((res, rej) => {
+        const s = document.createElement('script');
+        s.src = 'https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js';
+        s.onload = res; s.onerror = rej;
+        document.head.appendChild(s);
+      });
+    }
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'mm', format: 'a4' });
+    const W = 210;
+
+    // ── Header azul ──
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 0, W, 42, 'F');
+
+    // Ícono cuadrado blanco
+    doc.setFillColor(255, 255, 255);
+    doc.roundedRect(14, 10, 22, 22, 4, 4, 'F');
+    doc.setFillColor(37, 99, 235);
+    doc.setFontSize(18);
+    doc.setFont('helvetica','bold');
+    doc.setTextColor(37, 99, 235);
+    doc.text('↑', 19, 25);
+
+    // Título
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(16);
+    doc.setFont('helvetica','bold');
+    doc.text('SISCTE — Comprobante de Envío', 42, 20);
+    doc.setFontSize(9);
+    doc.setFont('helvetica','normal');
+    doc.text('Sistema de Gestión de Documentos Excel', 42, 27);
+    doc.text('Este documento certifica el registro exitoso de tu archivo.', 42, 33);
+
+    // ── Badge verde "REGISTRADO" ──
+    doc.setFillColor(22, 163, 74);
+    doc.roundedRect(14, 50, 50, 10, 3, 3, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont('helvetica','bold');
+    doc.text('✓  REGISTRADO', 18, 57);
+
+    // N° de registro
+    doc.setTextColor(107, 114, 128);
+    doc.setFontSize(8);
+    doc.setFont('helvetica','normal');
+    doc.text('N° de Registro: ' + d.registro, 70, 57);
+
+    // ── Sección datos ──
+    const campos = [
+      ['Enviado por',  d.nombre],
+      ['Correo',       d.email],
+      ['Área',         d.area],
+      ['Archivo',      d.archivo],
+      ['Tamaño',       d.tamano],
+      ['Fecha',        d.fecha],
+      ['Hora',         d.hora],
+      ['Almacenamiento', 'Google Drive'],
+    ];
+
+    let y = 72;
+    campos.forEach(([lbl, val], i) => {
+      // Fondo alternado
+      if (i % 2 === 0) {
+        doc.setFillColor(243, 244, 246);
+        doc.rect(14, y - 5, W - 28, 10, 'F');
+      }
+      doc.setTextColor(107, 114, 128);
+      doc.setFontSize(8);
+      doc.setFont('helvetica','bold');
+      doc.text(lbl.toUpperCase(), 18, y);
+      doc.setTextColor(17, 24, 39);
+      doc.setFontSize(10);
+      doc.setFont('helvetica','normal');
+      const valStr = String(val || '—');
+      doc.text(valStr.length > 60 ? valStr.substring(0,57)+'...' : valStr, 70, y);
+      y += 12;
+    });
+
+    // ── Línea separadora ──
+    doc.setDrawColor(229, 231, 235);
+    doc.setLineWidth(0.5);
+    doc.line(14, y + 2, W - 14, y + 2);
+
+    // ── Nota final ──
+    y += 10;
+    doc.setFillColor(239, 246, 255);
+    doc.roundedRect(14, y, W - 28, 18, 3, 3, 'F');
+    doc.setTextColor(37, 99, 235);
+    doc.setFontSize(8);
+    doc.setFont('helvetica','bold');
+    doc.text('INFORMACIÓN', 18, y + 7);
+    doc.setFont('helvetica','normal');
+    doc.setTextColor(30, 64, 175);
+    doc.text('Guarda este comprobante como respaldo de tu entrega. El archivo fue', 18, y + 12);
+    doc.text('almacenado en Google Drive y el registro queda permanente en el sistema.', 18, y + 16);
+
+    // ── Footer ──
+    doc.setFillColor(37, 99, 235);
+    doc.rect(0, 280, W, 17, 'F');
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(8);
+    doc.setFont('helvetica','normal');
+    doc.text('Sistema SISCTE — Generado automáticamente el ' + d.fecha + ' a las ' + d.hora, 14, 291);
+    doc.text('kattyeliza2000.github.io/SISCTE', W - 14, 291, { align: 'right' });
+
+    doc.save(`Comprobante_SISCTE_${d.registro}.pdf`);
+    toast('Comprobante PDF descargado ✓');
+  } catch(e) {
+    console.warn('PDF error:', e.message);
+  }
+}
+
+/* ══════════════════════════════════
    EMAILJS
 ══════════════════════════════════ */
 async function enviarCorreoNotificacion(datos) {
@@ -698,10 +783,15 @@ async function enviarCorreoNotificacion(datos) {
       });
       emailjs.init(EMAILJS_CONFIG.publicKey);
     }
-    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId,{
-      to_email: datos.email, to_name: datos.nombre,
-      area: datos.area, archivo: datos.archivo,
-      tamano: datos.tamano, fecha: datos.fecha, hora: datos.hora
+    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
+      to_email: datos.email,
+      to_name:  datos.nombre,
+      area:     datos.area,
+      archivo:  datos.archivo,
+      tamano:   datos.tamano,
+      fecha:    datos.fecha,
+      hora:     datos.hora,
+      registro: datos.registro
     });
     toast('Correo de confirmación enviado ✓');
   } catch(e) {
@@ -780,31 +870,9 @@ function renderAdmin(docs) {
 function renderDescarga(d) {
   const svg = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>`;
   if (d.storageURL)
-    return `<a href="${d.storageURL}" target="_blank" download="${d.nombreArchivo}" class="link-archivo">${svg}${d.nombreArchivo}</a>`;
-  if (d.archivoBase64)
-    return `<button onclick="descargarFirestore('${d.id}')" class="link-archivo" style="background:none;border:none;cursor:pointer;padding:0;font-family:inherit;">${svg}${d.nombreArchivo}</button>`;
+    return `<a href="${d.storageURL}" target="_blank" class="link-archivo">${svg}${d.nombreArchivo}</a>`;
   return `<span style="color:var(--txt3);font-size:12px;">${d.nombreArchivo||'—'}</span>`;
 }
-
-window.descargarFirestore = async function(docId) {
-  try {
-    toast('Preparando descarga...','ok');
-    if (!pakoListo) await cargarPako();
-    const snap = await window._fb.getDoc(window._fb.doc(db,'entregas',docId));
-    if (!snap.exists()){ toast('Archivo no encontrado','err'); return; }
-    const d = snap.data();
-    const binary = atob(d.archivoBase64);
-    const bytes  = new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    const datos = (d.comprimido && window.pako) ? window.pako.ungzip(bytes) : bytes;
-    const blob  = new Blob([datos],{type:d.mimeType});
-    const url   = URL.createObjectURL(blob);
-    const a     = document.createElement('a');
-    a.href=url; a.download=d.nombreArchivo; a.click();
-    URL.revokeObjectURL(url);
-    toast('Descarga iniciada ✓');
-  } catch(e){ toast('Error al descargar: '+e.message,'err'); }
-};
 
 /* ══════════════════════════════════
    FILTROS
@@ -888,9 +956,9 @@ function abrirModalArchivado() {
   // Construir lista de meses disponibles con archivos NO archivados
   const mesesMap = {};
   docsAdmin.forEach(d => {
-    if (d.archivado) return; // ya archivados no se muestran
-    if (!d.archivoBase64 && !d.storageURL) return; // sin binario tampoco
-    const mes = d.timestamp.slice(0,7); // "2025-06"
+    if (d.archivado) return;
+    if (!d.storageURL) return; // sin URL de Drive no se puede archivar
+    const mes = d.timestamp.slice(0,7);
     if (!mesesMap[mes]) mesesMap[mes] = { docs:[], label: labelMes(d.timestamp) };
     mesesMap[mes].docs.push(d);
   });
@@ -964,55 +1032,33 @@ function archPaso2() {
 async function descargarMesCompleto() {
   const mes  = $('arch-mes-select').value;
   const info = window._archMeses[mes];
-  if (!pakoListo) await cargarPako();
 
   $('arch-paso2').style.display = 'none';
   $('arch-paso3').style.display = 'block';
-  $('arch-progreso-txt').textContent = 'Descargando archivos...';
+  $('arch-progreso-txt').textContent = 'Abriendo archivos de Drive...';
 
   let ok = 0;
   for (let i=0; i<info.docs.length; i++) {
     const d = info.docs[i];
     $('arch-progreso-bar').style.width = Math.round(((i+1)/info.docs.length)*100)+'%';
-    $('arch-progreso-txt').textContent = `Descargando ${i+1} de ${info.docs.length}: ${d.nombreArchivo}`;
+    $('arch-progreso-txt').textContent = `Abriendo ${i+1} de ${info.docs.length}: ${d.nombreArchivo}`;
     try {
-      await descargarArchivoLocal(d);
+      if (d.storageURL) window.open(d.storageURL, '_blank');
       ok++;
-    } catch(e) {
-      console.warn('Error descargando', d.nombreArchivo, e);
-    }
-    // Pequeña pausa para no saturar el navegador
-    await new Promise(r => setTimeout(r, 300));
+    } catch(e) { console.warn('Error abriendo', d.nombreArchivo, e); }
+    await new Promise(r => setTimeout(r, 400));
   }
 
-  $('arch-progreso-txt').textContent = `✓ ${ok} de ${info.docs.length} archivos descargados`;
+  $('arch-progreso-txt').textContent = `✓ ${ok} de ${info.docs.length} archivos abiertos desde Drive`;
   $('arch-btn-archivar').style.display = 'block';
   $('arch-btn-archivar').onclick = () => confirmarArchivar(mes, info.docs);
 }
 
-/* ── Descarga un archivo individual al disco local ── */
-async function descargarArchivoLocal(d) {
-  if (d.archivoBase64) {
-    const binary = atob(d.archivoBase64);
-    const bytes  = new Uint8Array(binary.length);
-    for(let i=0;i<binary.length;i++) bytes[i]=binary.charCodeAt(i);
-    const datos = (d.comprimido && window.pako) ? window.pako.ungzip(bytes) : bytes;
-    const blob  = new Blob([datos],{type:d.mimeType});
-    const url   = URL.createObjectURL(blob);
-    const a     = document.createElement('a');
-    a.href=url; a.download=d.nombreArchivo; a.click();
-    URL.revokeObjectURL(url);
-  } else if (d.storageURL) {
-    // Para Storage: abrir en nueva pestaña (el navegador descargará)
-    window.open(d.storageURL, '_blank');
-  }
-}
-
-/* ── CONFIRMAR ARCHIVADO: Borrar binarios, conservar metadatos ── */
+/* ── CONFIRMAR ARCHIVADO: Marcar como archivados en Firestore ── */
 async function confirmarArchivar(mes, docs) {
   $('arch-btn-archivar').disabled = true;
   $('arch-btn-archivar').textContent = 'Archivando...';
-  $('arch-progreso-txt').textContent = 'Eliminando binarios de Firestore...';
+  $('arch-progreso-txt').textContent = 'Marcando registros como archivados...';
 
   try {
     const { doc, updateDoc } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
@@ -1020,13 +1066,10 @@ async function confirmarArchivar(mes, docs) {
     let procesados = 0;
     for (const d of docs) {
       $('arch-progreso-bar').style.width = Math.round(((procesados+1)/docs.length)*100)+'%';
-      // Eliminar solo el binario, conservar todos los demás campos
       await updateDoc(doc(db,'entregas',d.id), {
-        archivoBase64: null,
-        storageURL:    null,
-        archivado:     true,
+        archivado:      true,
         fechaArchivado: new Date().toISOString(),
-        notaArchivado: `Archivado manualmente el ${new Date().toLocaleDateString('es-EC',{timeZone:'America/Guayaquil',day:'2-digit',month:'long',year:'numeric'})}`
+        notaArchivado:  `Archivado el ${new Date().toLocaleDateString('es-EC',{timeZone:'America/Guayaquil',day:'2-digit',month:'long',year:'numeric'})}`
       });
       procesados++;
       await new Promise(r => setTimeout(r, 150));
@@ -1035,7 +1078,6 @@ async function confirmarArchivar(mes, docs) {
     $('arch-progreso-txt').textContent = `✓ ${procesados} registros archivados. Historial conservado.`;
     $('arch-btn-archivar').textContent = '✓ Archivado completado';
 
-    // Recargar la lista del admin
     setTimeout(async () => {
       cerrarModalArchivado();
       await cargarAdmin();
