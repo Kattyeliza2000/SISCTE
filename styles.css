@@ -49,13 +49,27 @@ nav{background:var(--white);border-bottom:1px solid var(--border);height:48px;pa
   padding:40px 16px;
   background:var(--bg);
 }
-.login-hero{text-align:center;margin-bottom:28px;animation:up .3s ease;}
-.login-hero-ico{width:60px;height:60px;background:linear-gradient(135deg,#2563eb,#1d4ed8);border-radius:16px;display:flex;align-items:center;justify-content:center;margin:0 auto 14px;box-shadow:0 8px 20px rgba(37,99,235,.3);}
-.login-titulo{font-size:24px;font-weight:800;color:var(--txt);}
-.login-sub{font-size:13px;color:var(--txt2);margin-top:4px;}
-.login-card{background:var(--white);border:1px solid var(--border);border-radius:16px;box-shadow:var(--shm);padding:32px;width:100%;max-width:400px;animation:up .35s ease;}
-.login-card h2{font-size:18px;font-weight:800;margin-bottom:6px;}
-.login-card-desc{font-size:12px;color:var(--txt2);margin-bottom:24px;line-height:1.6;}
+.login-hero{display:none;}
+.login-titulo{display:none;}
+.login-sub{display:none;}
+.login-card{background:var(--white);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shl);padding:0;width:100%;max-width:860px;animation:up .35s ease;display:flex;overflow:hidden;min-height:520px;}
+.login-card h2{font-size:20px;font-weight:800;margin-bottom:6px;color:var(--txt);}
+.login-card-desc{font-size:12px;color:var(--txt2);margin-bottom:20px;line-height:1.6;}
+
+/* Panel izquierdo — identidad */
+.login-panel-left{background:linear-gradient(145deg,#1e3a8a 0%,#2563eb 60%,#3b82f6 100%);padding:48px 40px;display:flex;flex-direction:column;justify-content:space-between;min-width:280px;max-width:320px;flex-shrink:0;position:relative;overflow:hidden;}
+.login-panel-left::before{content:'';position:absolute;top:-60px;right:-60px;width:220px;height:220px;background:rgba(255,255,255,.06);border-radius:50%;}
+.login-panel-left::after{content:'';position:absolute;bottom:-40px;left:-40px;width:160px;height:160px;background:rgba(255,255,255,.05);border-radius:50%;}
+.lpl-logo{width:48px;height:48px;background:rgba(255,255,255,.15);border-radius:14px;display:flex;align-items:center;justify-content:center;margin-bottom:32px;backdrop-filter:blur(4px);}
+.lpl-title{font-size:28px;font-weight:900;color:#fff;letter-spacing:-0.5px;line-height:1.1;margin-bottom:10px;}
+.lpl-sub{font-size:12px;color:rgba(255,255,255,.7);line-height:1.6;}
+.lpl-dots{display:flex;gap:6px;margin-top:auto;padding-top:40px;}
+.lpl-dot{width:6px;height:6px;border-radius:50%;background:rgba(255,255,255,.3);}
+.lpl-dot.active{background:#fff;width:18px;border-radius:3px;}
+.lpl-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.2);border-radius:20px;padding:5px 12px;font-size:11px;color:rgba(255,255,255,.85);margin-bottom:20px;backdrop-filter:blur(4px);}
+
+/* Panel derecho — formulario */
+.login-panel-right{flex:1;padding:40px 36px;display:flex;flex-direction:column;justify-content:center;}
 .btn-google{width:100%;display:flex;align-items:center;justify-content:center;gap:10px;background:var(--white);color:var(--txt);border:1.5px solid var(--border);border-radius:var(--r);padding:11px 16px;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .2s;box-shadow:var(--sh);}
 .btn-google:hover{border-color:#4285f4;box-shadow:0 2px 12px rgba(66,133,244,.2);}
 .info-note{display:flex;align-items:flex-start;gap:8px;background:var(--blue-l);border:1px solid var(--blue-m);border-radius:8px;padding:10px 12px;font-size:11px;color:#1e40af;margin-top:16px;line-height:1.5;}
@@ -225,6 +239,7 @@ tbody tr:hover td{background:#fafafa;}
 .td-nombre{font-size:12px;font-weight:600;white-space:nowrap;}
 .td-email{font-size:10px;color:var(--txt2);}
 .td-arch{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.td-detalle{max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;color:var(--txt2);cursor:default;}
 .td-peso{font-size:11px;color:var(--txt2);white-space:nowrap;}
 .td-fecha{font-size:11px;color:var(--txt2);white-space:nowrap;}
 .td-hora{font-size:11px;font-weight:600;color:var(--txt2);white-space:nowrap;}
@@ -438,4 +453,28 @@ tbody tr:hover td{background:#fafafa;}
   .btn-registrar,.btn-google,.btn-acc,.btn-modal-primary,.btn-modal-danger{
     min-height:44px; /* área táctil mínima recomendada */
   }
+}
+
+/* ── AUTH TABS ─────────────────────────────────── */
+.auth-tabs{display:flex;background:var(--bg);border-radius:8px;padding:3px;margin-bottom:20px;gap:3px;}
+.auth-tab{flex:1;padding:7px 0;border:none;background:transparent;border-radius:6px;font-family:'Inter',sans-serif;font-size:12px;font-weight:600;color:var(--txt2);cursor:pointer;transition:all .15s;}
+.auth-tab.active{background:var(--white);color:var(--blue);box-shadow:0 1px 4px rgba(0,0,0,.1);}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:14px 0;color:var(--txt3);font-size:11px;}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border);}
+.form-input{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:8px;font-family:'Inter',sans-serif;font-size:13px;color:var(--txt);background:var(--white);transition:border-color .15s;box-sizing:border-box;}
+.form-input:focus{outline:none;border-color:var(--blue);box-shadow:0 0 0 3px rgba(37,99,235,.1);}
+.form-input::placeholder{color:var(--txt3);}
+.btn-primary-full{width:100%;padding:11px;background:var(--blue);color:#fff;border:none;border-radius:var(--r);font-family:'Inter',sans-serif;font-size:13px;font-weight:700;cursor:pointer;transition:background .15s;margin-top:4px;}
+.btn-primary-full:hover{background:var(--blue-d);}
+.btn-link{background:none;border:none;color:var(--blue);font-family:'Inter',sans-serif;font-size:12px;cursor:pointer;padding:0;text-decoration:underline;}
+.btn-link:hover{color:var(--blue-d);}
+
+/* Login responsive móvil */
+@media(max-width:640px){
+  .login-card{flex-direction:column;max-width:100%;border-radius:16px;}
+  .login-panel-left{min-width:unset;max-width:unset;padding:28px 24px 20px;min-height:unset;}
+  .lpl-title{font-size:22px;}
+  .lpl-dots{display:none;}
+  .login-panel-right{padding:24px 20px;}
+  .lpl-sub{display:none;}
 }
