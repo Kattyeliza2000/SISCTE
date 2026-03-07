@@ -450,29 +450,12 @@ function setProgreso(pct, label) {
    GOOGLE DRIVE UPLOAD
 ══════════════════════════════════ */
 async function subirAGoogleDrive(archivo, onProgress) {
-  if (!window.gapi) {
-    await new Promise((res, rej) => {
-      const s = document.createElement('script');
-      s.src = 'https://apis.google.com/js/api.js';
-      s.onload = res; s.onerror = rej;
-      document.head.appendChild(s);
-    });
-  }
-  if (!window.gapi.client) {
-    await new Promise(res => window.gapi.load('client:auth2', res));
-    await window.gapi.client.init({
-      clientId: GDRIVE_CONFIG.clientId,
-      scope: GDRIVE_CONFIG.scope
-    });
-  }
-  const authInstance = window.gapi.auth2.getAuthInstance();
-  if (!authInstance.isSignedIn.get()) {
-    await authInstance.signIn();
-  }
-  const token = authInstance.currentUser.get().getAuthResponse().access_token;
+  // Obtener token usando Google Identity Services (GIS) - método moderno
+  const token = await obtenerTokenDrive();
+
   return new Promise((resolve, reject) => {
     const fecha = new Date().toISOString().slice(0,10);
-    const area  = usuario.area || (document.getElementById('area-select')?.value) || 'SIN_AREA';
+    const area  = document.getElementById('area-select')?.value || 'SIN_AREA';
     const metadata = {
       name: `${fecha}_${area}_${archivo.name}`,
       mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
@@ -505,11 +488,40 @@ async function subirAGoogleDrive(archivo, onProgress) {
           resolve(resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`);
         });
       } else {
-        reject(new Error('Error subiendo a Google Drive: ' + xhr.responseText));
+        reject(new Error('Error subiendo a Google Drive: ' + xhr.status + ' ' + xhr.responseText));
       }
     };
     xhr.onerror = () => reject(new Error('Error de red al subir a Google Drive'));
     xhr.send(form);
+  });
+}
+
+/* Obtener token OAuth2 usando Google Identity Services */
+function obtenerTokenDrive() {
+  return new Promise((resolve, reject) => {
+    // Cargar GIS si no está cargado
+    const cargarGIS = () => new Promise((res, rej) => {
+      if (window.google?.accounts?.oauth2) { res(); return; }
+      const s = document.createElement('script');
+      s.src = 'https://accounts.google.com/gsi/client';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+
+    cargarGIS().then(() => {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GDRIVE_CONFIG.clientId,
+        scope: GDRIVE_CONFIG.scope,
+        callback: (resp) => {
+          if (resp.error) {
+            reject(new Error('Error de autorización: ' + resp.error));
+          } else {
+            resolve(resp.access_token);
+          }
+        }
+      });
+      client.requestAccessToken();
+    }).catch(reject);
   });
 }
 
