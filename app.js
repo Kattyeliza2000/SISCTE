@@ -65,7 +65,8 @@ const UMBRAL_BYTES = 800 * 1024;
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
-  "iastudillol@unemi.edu.ec"
+  "iastudillol@unemi.edu.ec",
+  "ky211209@gmail.com"
 ];
 
 const AREAS = [
