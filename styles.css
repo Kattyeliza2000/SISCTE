@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
   --blue:#2563eb;--blue-d:#1d4ed8;--blue-l:#eff6ff;--blue-m:#dbeafe;
@@ -10,7 +12,7 @@
   --shm:0 4px 6px -1px rgba(0,0,0,.1),0 2px 4px -2px rgba(0,0,0,.06);
   --shl:0 10px 25px -5px rgba(0,0,0,.1),0 4px 10px -5px rgba(0,0,0,.04);
 }
-body{font-family:'Inter',sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.5;}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--txt);min-height:100vh;font-size:14px;line-height:1.5;}
 
 /* ══════════════════════════════
    NAVBAR
@@ -42,6 +44,7 @@ nav{background:var(--white);border-bottom:1px solid var(--border);height:48px;pa
    VISTA LOGIN — centrada
 ══════════════════════════════ */
 #vista-login{
+  display:flex;
   flex-direction:column;
   align-items:center;
   justify-content:center;
