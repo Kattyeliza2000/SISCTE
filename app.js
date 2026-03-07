@@ -54,6 +54,12 @@ const EMAILJS_CONFIG = {
   templateId: "template_8d6u82j"
 };
 
+/* Google Drive API para archivos grandes */
+const GDRIVE_CONFIG = {
+  clientId: '270864419518-qi6hia7bu9012til3b0fhn13tct81feu.apps.googleusercontent.com',
+  scope: 'https://www.googleapis.com/auth/drive.file'
+};
+
 /* Archivos menores a este umbral van a Firestore comprimido */
 const UMBRAL_BYTES = 800 * 1024;
 
@@ -403,7 +409,7 @@ function seleccionar(f) {
   $('fp-peso').textContent   = formatSize(f.size);
   const modo = f.size <= UMBRAL_BYTES
     ? '⚡ Se guardará comprimido (sin CORS)'
-    : '☁️ Firebase Storage (CORS requerido)';
+    : '☁️ Google Drive (archivo grande)';
   const modoEl = $('fp-modo');
   if (modoEl) modoEl.textContent = modo;
   $('dropzone').style.display     = 'none';
@@ -438,6 +444,73 @@ function setProgreso(pct, label) {
   $('progress-txt').textContent = pct+'%';
   const lbl = $('progress-label-txt');
   if (lbl) lbl.textContent = label||'';
+}
+
+/* ══════════════════════════════════
+   GOOGLE DRIVE UPLOAD
+══════════════════════════════════ */
+async function subirAGoogleDrive(archivo, onProgress) {
+  if (!window.gapi) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://apis.google.com/js/api.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
+    });
+  }
+  if (!window.gapi.client) {
+    await new Promise(res => window.gapi.load('client:auth2', res));
+    await window.gapi.client.init({
+      clientId: GDRIVE_CONFIG.clientId,
+      scope: GDRIVE_CONFIG.scope
+    });
+  }
+  const authInstance = window.gapi.auth2.getAuthInstance();
+  if (!authInstance.isSignedIn.get()) {
+    await authInstance.signIn();
+  }
+  const token = authInstance.currentUser.get().getAuthResponse().access_token;
+  return new Promise((resolve, reject) => {
+    const fecha = new Date().toISOString().slice(0,10);
+    const area  = usuario.area || (document.getElementById('area-select')?.value) || 'SIN_AREA';
+    const metadata = {
+      name: `${fecha}_${area}_${archivo.name}`,
+      mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    };
+    const form = new FormData();
+    form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
+    form.append('file', archivo);
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
+    xhr.setRequestHeader('Authorization', 'Bearer ' + token);
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) {
+        const p = Math.round(20 + (e.loaded / e.total) * 70);
+        onProgress(p);
+      }
+    };
+    xhr.onload = () => {
+      if (xhr.status === 200) {
+        const resp = JSON.parse(xhr.responseText);
+        fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': 'Bearer ' + token,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ role: 'reader', type: 'anyone' })
+        }).then(() => {
+          resolve(`https://drive.google.com/file/d/${resp.id}/view`);
+        }).catch(() => {
+          resolve(resp.webViewLink || `https://drive.google.com/file/d/${resp.id}/view`);
+        });
+      } else {
+        reject(new Error('Error subiendo a Google Drive: ' + xhr.responseText));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Error de red al subir a Google Drive'));
+    xhr.send(form);
+  });
 }
 
 /* ══════════════════════════════════
@@ -480,30 +553,12 @@ async function enviarArchivo() {
         setProgreso(65,'Listo para guardar...');
       }
 
-    /* ─ Firebase Storage para archivos grandes ─ */
+    /* ─ Google Drive para archivos grandes ─ */
     } else {
-      metodo = 'firebase_storage';
-      const path = `entregas/${usuario.uid}/${ahora.getTime()}_${archivoSeleccionado.name}`;
-      const task = window._fb.uploadBytesResumable(window._fb.ref(storage, path), archivoSeleccionado);
-
-      storageURL = await new Promise((resolve, reject) => {
-        task.on('state_changed',
-          snap => {
-            const p = Math.round(10 + (snap.bytesTransferred/snap.totalBytes)*60);
-            setProgreso(p, `Subiendo... ${p}%`);
-          },
-          err => {
-            // Si es CORS, intentar con Firestore comprimido si el archivo cabe
-            if ((err.message||'').toLowerCase().includes('cors') || err.code==='storage/unknown') {
-              reject(new Error('CORS_ERROR'));
-            } else {
-              reject(err);
-            }
-          },
-          async () => {
-            resolve(await window._fb.getDownloadURL(task.snapshot.ref));
-          }
-        );
+      metodo = 'google_drive';
+      setProgreso(20, 'Conectando con Google Drive...');
+      storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
+        setProgreso(p, `Subiendo a Drive... ${p}%`);
       });
     }
 
@@ -542,12 +597,7 @@ async function enviarArchivo() {
 
   } catch(err) {
     console.error(err);
-    if (err.message==='CORS_ERROR') {
-      toast('Error CORS en Storage. Solo disponible para archivos ≤ 800 KB por ahora.','err');
-      toast('Configura CORS en Firebase según las instrucciones del README.','err');
-    } else {
-      toast('Error al subir: '+err.message,'err');
-    }
+    toast('Error al subir: '+err.message,'err');
     $('progress-wrap').style.display='none';
     resetBtn();
   }
