@@ -1224,6 +1224,7 @@ function cerrarModalArchivado() {
 }
 
 /* ── Exponer funciones al HTML inline ── */
+window.login                  = login;
 window.abrirModalArchivado    = abrirModalArchivado;
 window.irSubir                = irSubir;
 window.cerrarModalArchivado   = cerrarModalArchivado;
