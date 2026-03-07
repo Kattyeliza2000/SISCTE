@@ -59,8 +59,7 @@ const GDRIVE_CONFIG = {
 };
 
 /* ID de la carpeta raíz ORGANICO-CTE en Google Drive */
-/* Carpeta raíz en Google Drive - Usa "root" para la raíz de cada usuario */
-const GDRIVE_CARPETA_GENERAL = 'root';
+const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
 const ADMIN_EMAILS = [
   "parametrosp.cte@gmail.com",
@@ -645,15 +644,18 @@ function obtenerTokenDrive(forzarNuevo = false) {
   });
 }
 
-/* Crear subcarpeta - DEBE funcionar o lanzar error */
+/* Crear subcarpeta DENTRO de ORGANICO-CTE - DEBE funcionar o lanzar error */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
-  console.log(`\n📁 CREANDO/BUSCANDO CARPETA: ${nombreArea}\n`);
+  console.log(`\n📁 CARPETA: ${nombreArea}\n`);
+  console.log(`🔍 Buscando dentro de ORGANICO-CTE...`);
   
   try {
-    // Buscar carpeta existente
+    // Buscar carpeta DENTRO de ORGANICO-CTE
     const query = encodeURIComponent(
-      `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and trashed=false`
+      `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
     );
+    
+    console.log(`Query: ${query}`);
     
     const searchRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)&pageSize=1`,
@@ -661,17 +663,17 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
     );
     
     if (!searchRes.ok) {
-      throw new Error(`Error buscando carpeta: HTTP ${searchRes.status}`);
+      throw new Error(`Error buscando: HTTP ${searchRes.status}`);
     }
     
     const searchData = await searchRes.json();
     if (searchData.files && searchData.files.length > 0) {
-      console.log(`✓ Carpeta encontrada: ${searchData.files[0].id}`);
+      console.log(`✅ Carpeta encontrada: ${searchData.files[0].id}`);
       return searchData.files[0].id;
     }
     
-    // Crear carpeta
-    console.log(`📁 Carpeta no existe, CREANDO...`);
+    // Crear carpeta DENTRO de ORGANICO-CTE
+    console.log(`📁 Creando dentro de ORGANICO-CTE...`);
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
       headers: {
@@ -680,19 +682,22 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
       },
       body: JSON.stringify({
         name: nombreArea,
-        mimeType: 'application/vnd.google-apps.folder'
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: [GDRIVE_CARPETA_GENERAL]
       })
     });
     
     if (!createRes.ok) {
       const errorData = await createRes.json();
-      throw new Error(`Error creando carpeta: ${errorData.error?.message || createRes.status}`);
+      console.error(`❌ Error HTTP ${createRes.status}:`, errorData);
+      throw new Error(`Error: ${errorData.error?.message || createRes.status}`);
     }
     
     const carpeta = await createRes.json();
-    console.log(`✅ CARPETA CREADA: ${carpeta.id}`);
+    console.log(`✅ Carpeta creada: ${carpeta.id}`);
     
-    // Dar permisos
+    // Dar permisos de EDITOR a "anyone with link"
+    console.log(`🔐 Asignando permisos de EDITOR...`);
     const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
       method: 'POST',
       headers: {
@@ -706,16 +711,17 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
     });
     
     if (permRes.ok) {
-      console.log(`✓ Permisos asignados`);
+      console.log(`✅ Permisos de EDITOR asignados`);
     } else {
-      console.warn(`⚠️ No se pudieron asignar permisos`);
+      console.error(`⚠️ Error asignando permisos: ${permRes.status}`);
     }
     
     return carpeta.id;
     
   } catch(e) {
-    console.error(`\n❌ ERROR CRÍTICO EN CARPETA:\n${e.message}\n`);
-    throw new Error(`No se pudo crear/encontrar la carpeta ${nombreArea}: ${e.message}`);
+    console.error(`\n❌ ERROR CRÍTICO:\n${e.message}\n`);
+    toast(`Error en carpeta ${nombreArea}: ${e.message}`, 'err');
+    throw e;
   }
 }
 
