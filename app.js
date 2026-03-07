@@ -293,11 +293,11 @@ async function cargarMisEnvios() {
     const { where } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const q = window._fb.query(
       window._fb.collection(db,'entregas'),
-      where('uid','==',usuario.uid),
-      window._fb.orderBy('timestamp','desc')
+      where('uid','==',usuario.uid)
     );
     const snap = await window._fb.getDocs(q);
-    const docs = snap.docs.map(d=>({id:d.id,...d.data()}));
+    const docs = snap.docs.map(d=>({id:d.id,...d.data()}))
+      .sort((a,b) => (b.timestamp||'').localeCompare(a.timestamp||''));
     if (docs.length === 0) {
       lista.innerHTML = `
         <div class="mis-envios-vacio">
