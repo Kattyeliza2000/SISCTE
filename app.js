@@ -1,33 +1,11 @@
 /* ══════════════════════════════════════════════════════════
-   PORTAL SISCTE — app.js  v4.0
+   PORTAL SISCTE — app.js  v4.1 (CORREGIDO)
    ─ Almacenamiento: todos los archivos → Google Drive
      (carpeta por área, se crea automáticamente)
    ─ Firestore: solo guarda metadatos (nombre, área, fecha…)
    ─ EmailJS para correo de confirmación al usuario
    ─ PDF comprobante descargado automáticamente al enviar
    ─ Panel admin con filtros y exportación Excel filtrada
-══════════════════════════════════════════════════════════ */
-
-/* ══════════════════════════════════════════════════════════
-   SOLUCIÓN AL ERROR CORS EN GITHUB PAGES
-   ──────────────────────────────────────────────────────────
-   Si ves "Access blocked by CORS policy" en Firebase Storage,
-   ejecuta ESTOS PASOS UNA SOLA VEZ desde tu PC:
-
-   1. Instala Google Cloud SDK: https://cloud.google.com/sdk/docs/install
-   2. Crea un archivo cors.json con este contenido exacto:
-      [{"origin":["https://kattyeliza2000.github.io","http://localhost"],
-        "method":["GET","POST","PUT","DELETE","HEAD"],
-        "maxAgeSeconds":3600}]
-   3. Ejecuta en terminal:
-      gcloud auth login
-      gsutil cors set cors.json gs://siscte-30f1b.firebasestorage.app
-   4. Verifica con:
-      gsutil cors get gs://siscte-30f1b.firebasestorage.app
-
-   MIENTRAS TANTO: el sistema usa Firestore comprimido
-   automáticamente para archivos hasta 800 KB.
-   Para archivos más grandes: arregla CORS primero.
 ══════════════════════════════════════════════════════════ */
 
 const FIREBASE_CONFIG = {
@@ -39,27 +17,18 @@ const FIREBASE_CONFIG = {
   appId:             "1:270864419518:web:93ed773c0bc1ad5b6b6cef"
 };
 
-/* ── EMAILJS ─────────────────────────────────────────────
-   1. Regístrate en https://www.emailjs.com (gratis 200/mes)
-   2. Crea un Service Gmail → copia Service ID
-   3. Crea un Template con: {{to_email}}, {{to_name}},
-      {{area}}, {{archivo}}, {{fecha}}, {{hora}}, {{tamano}}
-   4. Account → API Keys → Public Key
-──────────────────────────────────────────────────────── */
 const EMAILJS_CONFIG = {
   publicKey:          "gaScEoguCEcx7aFYT",
   serviceId:          "service_ybvnh3i",
-  templateIdAdmin:    "template_8d6u82j",   // ← correo al administrador (HTML rojo)
-  templateIdUsuario:  "template_XXXXXXX"    // ← ⚠️ REEMPLAZA con tu nuevo template ID del usuario
+  templateIdAdmin:    "template_kxdf3rr",
+  templateIdUsuario:  "template_8d6u82j"
 };
 
-/* Google Drive API — todos los archivos se suben aquí */
 const GDRIVE_CONFIG = {
   clientId: '270864419518-qi6hia7bu9012til3b0fhn13tct81feu.apps.googleusercontent.com',
   scope: 'https://www.googleapis.com/auth/drive'
 };
 
-/* ID de la carpeta raíz ORGANICO-CTE en Google Drive */
 const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 
 const ADMIN_EMAILS = [
@@ -80,9 +49,9 @@ const AREAS = [
 
 let db, auth, usuario = null;
 let archivoSeleccionado = null;
-let actaSeleccionada = null;   // ← Acta PDF obligatoria
+let actaSeleccionada = null;
 let docsAdmin = [];
-let _firebaseReady = null; // Promesa que resuelve cuando Firebase está listo
+let _firebaseReady = null;
 
 /* ══════════════════════════════════
    FIREBASE INIT
@@ -117,7 +86,6 @@ async function initFirebase() {
       sendPasswordResetEmail, sendEmailVerification, updateProfile
     };
 
-    // Capturar resultado del redirect de Google si viene de uno
     try {
       const result = await getRedirectResult(auth);
       if (result?.user) {
@@ -133,9 +101,9 @@ async function initFirebase() {
         console.log('🔍 ¿Es admin?:', esAdmin());
         console.log('📝 Email en minúsculas:', usuario.email.toLowerCase());
         console.log('📝 Admin emails:', ADMIN_EMAILS.map(x => x.toLowerCase()));
-        
+
         actualizarNav();
-        
+
         if (esAdmin()) {
           console.log('✅ Mostrando botón ADMIN');
           show('nb-subir');
@@ -154,11 +122,11 @@ async function initFirebase() {
       }
     });
 
-    _resolveFirebase(); // Firebase listo — desbloquear login
+    _resolveFirebase();
   } catch(e) {
     console.error('❌ Error inicializando Firebase:', e);
     toast('Error iniciando sistema: ' + e.message, 'err');
-    _resolveFirebase(); // Desbloquear igualmente para evitar bloqueo
+    _resolveFirebase();
   }
 }
 
@@ -168,13 +136,13 @@ async function initFirebase() {
 async function login() {
   try {
     console.log('🔓 Iniciando login con Google...');
-    await _firebaseReady; // Esperar a que Firebase esté completamente cargado
+    await _firebaseReady;
     console.log('✓ Firebase listo');
-    
+
     const provider = new window._fb.GoogleAuthProvider();
     provider.addScope('profile');
     provider.addScope('email');
-    
+
     try {
       console.log('📱 Intentando popup de Google...');
       toast('Abriendo ventana de Google...', 'ok');
@@ -182,7 +150,6 @@ async function login() {
       console.log('✓ Login popup exitoso');
     } catch(popupErr) {
       console.warn('⚠️ Error popup:', popupErr.code, popupErr.message);
-      // Si el popup falla (bloqueado por navegador), usar redirect
       if (popupErr.code === 'auth/popup-blocked' ||
           popupErr.code === 'auth/popup-closed-by-user' ||
           popupErr.code === 'auth/cancelled-popup-request') {
@@ -204,7 +171,6 @@ async function login() {
 }
 
 async function logout() {
-  // Limpiar caché del token de Drive al cerrar sesión
   _driveTokenCache  = null;
   _driveTokenExpiry = 0;
   try { await window._fb.signOut(auth); } catch(e) {}
@@ -219,15 +185,12 @@ async function loginEmail() {
     const cred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
     await cred.user.reload();
 
-    // Bloquear acceso si el correo no fue verificado (solo aplica a cuentas email/pass)
     if (!cred.user.emailVerified) {
       await window._fb.signOut(auth);
       toast('Debes verificar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada.', 'err');
-      // Ofrecer reenviar el correo de verificación
       const reenviar = confirm('¿Deseas que te reenviemos el correo de verificación?');
       if (reenviar) {
         try {
-          // Necesitamos iniciar sesión temporalmente para reenviar
           const tempCred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
           await window._fb.sendEmailVerification(tempCred.user);
           await window._fb.signOut(auth);
@@ -253,7 +216,6 @@ async function registrarEmail() {
   if (!nombre) { toast('Ingresa tu nombre completo','err'); return; }
   if (!email)  { toast('Ingresa tu correo','err'); return; }
 
-  // Validar formato básico del correo antes de ir al servidor
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
   if (!emailRegex.test(email)) { toast('El formato del correo no es válido','err'); return; }
 
@@ -261,16 +223,11 @@ async function registrarEmail() {
   try {
     const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
     await window._fb.updateProfile(cred.user, { displayName: nombre });
-
-    // Enviar correo de verificación — valida que el correo existe realmente
     await window._fb.sendEmailVerification(cred.user);
-
-    // Cerrar sesión hasta que el usuario verifique su correo
     await window._fb.signOut(auth);
 
     toast('✉️ Te enviamos un correo de verificación a ' + email + '. Confírmalo antes de iniciar sesión.');
 
-    // Limpiar formulario y volver a login
     document.getElementById('reg-nombre').value = '';
     document.getElementById('reg-email').value  = '';
     document.getElementById('reg-pass').value   = '';
@@ -314,8 +271,7 @@ const hide    = id => { const e=$(id); if(e) e.style.display='none'; };
 const hideAll = () => ['vista-login','vista-subir','vista-exito','vista-admin'].forEach(hide);
 
 function ir(v) {
-  hideAll(); 
-  // vista-login necesita flex para centrado, las demás usan block
+  hideAll();
   const el = $(v);
   if (!el) return;
   el.style.display = (v === 'vista-login') ? 'flex' : 'block';
@@ -374,7 +330,6 @@ function resetBtn() {
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
     </svg> Registrar Envío`;
-  // El estado del botón lo controla actualizarBotonEnviar()
   actualizarBotonEnviar();
 }
 
@@ -396,21 +351,16 @@ function poblarAreas(selectId, placeholder='— Selecciona tu área —') {
    VISTA SUBIR
 ══════════════════════════════════ */
 function irSubir() {
-  // Limpiar estado del archivo Excel
   archivoSeleccionado = null;
-  // Limpiar estado del acta PDF
   actaSeleccionada = null;
 
-  // CRÍTICO: resetear los inputs file
   const fi = $('file-input');
   if (fi) fi.value = '';
   const ai = $('acta-input');
   if (ai) ai.value = '';
 
-  // Limpiar UI del formulario Excel
   $('dropzone').style.display    = 'flex';
   $('file-preview').style.display = 'none';
-  // Limpiar UI del acta
   const actaDz = $('acta-dropzone'); if (actaDz) actaDz.style.display = 'flex';
   const actaPrev = $('acta-preview'); if (actaPrev) actaPrev.style.display = 'none';
 
@@ -418,13 +368,12 @@ function irSubir() {
   $('area-select').value = '';
   const det = $('detalle-envio'); if (det) det.value = '';
 
-  // Limpiar barra de progreso
   const bar = $('progress-bar');
   if (bar) bar.style.width = '0%';
   const ptxt = $('progress-txt');
   if (ptxt) ptxt.textContent = '0%';
 
-  resetBtn(); // llama actualizarBotonEnviar() internamente
+  resetBtn();
 
   const heroNombre = $('hero-nombre');
   if (heroNombre) heroNombre.textContent = usuario?.nombre || usuario?.email || '';
@@ -482,18 +431,13 @@ async function cargarMisEnvios() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   console.log('📋 DOMContentLoaded iniciado');
-  
-  // Iniciar Firebase
+
   initFirebase().catch(e => console.error('Error en initFirebase:', e));
   poblarAreas('area-select');
   poblarAreas('filtro-area', 'Todas las áreas');
 
-  // Esperar un poco para asegurar que los elementos existan
   await new Promise(r => setTimeout(r, 100));
 
-  // Asignar listeners con verificación
-  // Nota: btn-google usa onclick directo en el HTML
-  
   const btnLoginEmail = document.getElementById('btn-login-email');
   if (btnLoginEmail) {
     console.log('✓ Botón Login Email encontrado');
@@ -513,13 +457,13 @@ document.addEventListener('DOMContentLoaded', async () => {
   }
 
   document.querySelectorAll('.btn-logout').forEach(b => b.addEventListener('click', logout));
-  
+
   const nbSubir = $('nb-subir');
   if (nbSubir) nbSubir.addEventListener('click', () => usuario ? irSubir() : ir('vista-login'));
-  
+
   const nbAdmin = $('nb-admin');
   if (nbAdmin) nbAdmin.addEventListener('click', () => { if(esAdmin()){ ir('vista-admin'); cargarAdmin(); } });
-  
+
   const btnEnviarOtro = $('btn-enviar-otro');
   if (btnEnviarOtro) btnEnviarOtro.addEventListener('click', irSubir);
 
@@ -533,12 +477,12 @@ document.addEventListener('DOMContentLoaded', async () => {
     });
     dz.addEventListener('click', abrirSelectorArchivo);
   }
-  
+
   const fileInput = $('file-input');
   if (fileInput) fileInput.addEventListener('change', () => {
     if ($('file-input').files[0]) seleccionar($('file-input').files[0]);
   });
-  
+
   const btnCambiar = $('btn-cambiar');
   if (btnCambiar) btnCambiar.addEventListener('click', () => {
     archivoSeleccionado = null;
@@ -549,30 +493,26 @@ document.addEventListener('DOMContentLoaded', async () => {
     const fi = $('file-input');
     if (fi) fi.value = '';
   });
-  
+
   const btnEnviar = $('btn-enviar');
   if (btnEnviar) btnEnviar.addEventListener('click', enviarArchivo);
-  
+
   const btnFiltrar = $('btn-filtrar');
   if (btnFiltrar) btnFiltrar.addEventListener('click', aplicarFiltros);
-  
+
   const btnLimpiar = $('btn-limpiar');
   if (btnLimpiar) btnLimpiar.addEventListener('click', limpiarFiltros);
-  
+
   const btnExcel = $('btn-excel');
   if (btnExcel) btnExcel.addEventListener('click', () => exportarExcel(docsAdmin, false));
-  
+
   const btnExcelFiltrado = $('btn-excel-filtrado');
   if (btnExcelFiltrado) btnExcelFiltrado.addEventListener('click', exportarFiltrado);
-  
+
   console.log('✓ Todos los listeners asignados correctamente');
 });
 
 /* ── VALIDACIÓN ── */
-
-/* Crea un input file nuevo cada vez que se abre el selector.
-   Esto garantiza que el evento change se dispare siempre,
-   incluso si el usuario elige el mismo archivo que antes. */
 function abrirSelectorArchivo() {
   const input = document.createElement('input');
   input.type   = 'file';
@@ -605,6 +545,7 @@ function quitarActa() {
   const actaPrev = $('acta-preview'); if (actaPrev) actaPrev.style.display = 'none';
   actualizarBotonEnviar();
 }
+
 function seleccionar(f) {
   const ext = f.name.split('.').pop().toLowerCase();
   if (!['xlsx','xls'].includes(ext)) {
@@ -614,7 +555,7 @@ function seleccionar(f) {
   $('fp-nombre').textContent = f.name;
   $('fp-peso').textContent   = formatSize(f.size);
   const modoEl = $('fp-modo');
-  if (modoEl) modoEl.textContent = '\u2601\ufe0f Google Drive';
+  if (modoEl) modoEl.textContent = '☁️ Google Drive';
   $('dropzone').style.display     = 'none';
   $('file-preview').style.display = 'flex';
   actualizarBotonEnviar();
@@ -691,26 +632,18 @@ function setProgreso(pct, label) {
 
 /* ══════════════════════════════════
    GOOGLE DRIVE UPLOAD
-   — Carpeta general: ORGANICO-CTE (ID fijo)
-   — Subcarpetas por área: se crean solo la primera vez,
-     las siguientes subidas van directo a la existente
 ══════════════════════════════════ */
-
-/* Caché del token con expiración — evita pedir autorización
-   en cada envío pero renueva si ha pasado más de 45 minutos */
 let _driveTokenCache = null;
 let _driveTokenExpiry = 0;
 
-/* Obtener token OAuth2 usando Google Identity Services */
 function obtenerTokenDrive(forzarNuevo = false) {
-  // Si hay token válido en caché y no forzamos renovación, reutilizarlo
   if (!forzarNuevo && _driveTokenCache && Date.now() < _driveTokenExpiry) {
     console.log('✓ Usando token cacheado');
     return Promise.resolve(_driveTokenCache);
   }
 
   console.log('🔑 Solicitando nuevo token de Google Drive...');
-  
+
   return new Promise((resolve, reject) => {
     const cargarGIS = () => new Promise((res, rej) => {
       if (window.google?.accounts?.oauth2) {
@@ -744,7 +677,6 @@ function obtenerTokenDrive(forzarNuevo = false) {
             reject(new Error('Error de autorización: ' + resp.error));
           } else {
             console.log('✓ Token obtenido exitosamente');
-            // Guardar en caché por 45 minutos (tokens duran 1h)
             _driveTokenCache  = resp.access_token;
             _driveTokenExpiry = Date.now() + 45 * 60 * 1000;
             toast('✓ Conectado a Google Drive');
@@ -761,35 +693,30 @@ function obtenerTokenDrive(forzarNuevo = false) {
   });
 }
 
-/* Crear subcarpeta DENTRO de ORGANICO-CTE - DEBE funcionar o lanzar error */
 async function obtenerOCrearSubcarpeta(token, nombreArea) {
   console.log(`\n📁 CARPETA: ${nombreArea}\n`);
   console.log(`🔍 Buscando dentro de ORGANICO-CTE...`);
-  
+
   try {
-    // Buscar carpeta DENTRO de ORGANICO-CTE
     const query = encodeURIComponent(
       `mimeType='application/vnd.google-apps.folder' and name='${nombreArea}' and '${GDRIVE_CARPETA_GENERAL}' in parents and trashed=false`
     );
-    
-    console.log(`Query: ${query}`);
-    
+
     const searchRes = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id)&pageSize=1`,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
-    
+
     if (!searchRes.ok) {
       throw new Error(`Error buscando: HTTP ${searchRes.status}`);
     }
-    
+
     const searchData = await searchRes.json();
     if (searchData.files && searchData.files.length > 0) {
       console.log(`✅ Carpeta encontrada: ${searchData.files[0].id}`);
       return searchData.files[0].id;
     }
-    
-    // Crear carpeta DENTRO de ORGANICO-CTE
+
     console.log(`📁 Creando dentro de ORGANICO-CTE...`);
     const createRes = await fetch('https://www.googleapis.com/drive/v3/files', {
       method: 'POST',
@@ -803,17 +730,16 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
         parents: [GDRIVE_CARPETA_GENERAL]
       })
     });
-    
+
     if (!createRes.ok) {
       const errorData = await createRes.json();
       console.error(`❌ Error HTTP ${createRes.status}:`, errorData);
       throw new Error(`Error: ${errorData.error?.message || createRes.status}`);
     }
-    
+
     const carpeta = await createRes.json();
     console.log(`✅ Carpeta creada: ${carpeta.id}`);
-    
-    // Dar permisos de EDITOR a "anyone with link"
+
     console.log(`🔐 Asignando permisos de EDITOR...`);
     const permRes = await fetch(`https://www.googleapis.com/drive/v3/files/${carpeta.id}/permissions`, {
       method: 'POST',
@@ -826,15 +752,15 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
         type: 'anyone'
       })
     });
-    
+
     if (permRes.ok) {
       console.log(`✅ Permisos de EDITOR asignados`);
     } else {
       console.error(`⚠️ Error asignando permisos: ${permRes.status}`);
     }
-    
+
     return carpeta.id;
-    
+
   } catch(e) {
     console.error(`\n❌ ERROR CRÍTICO:\n${e.message}\n`);
     toast(`Error en carpeta ${nombreArea}: ${e.message}`, 'err');
@@ -842,24 +768,22 @@ async function obtenerOCrearSubcarpeta(token, nombreArea) {
   }
 }
 
-/* Subir archivo - DEBE funcionar o lanzar error */
 async function subirAGoogleDrive(archivo, onProgress) {
   console.log(`\n📤 SUBIENDO ARCHIVO A GOOGLE DRIVE\n`);
-  
+
   try {
     const token = await obtenerTokenDrive();
     console.log(`✓ Token obtenido`);
-    
+
     const area = document.getElementById('area-select')?.value;
     if (!area) throw new Error('No se seleccionó área');
     console.log(`✓ Área: ${area}`);
-    
-    // CREAR LA CARPETA PRIMERO
+
     const idSubcarpeta = await obtenerOCrearSubcarpeta(token, area);
     console.log(`✓ ID de carpeta: ${idSubcarpeta}`);
-    
+
     onProgress(40);
-    
+
     const fecha = new Date().toISOString().slice(0, 10);
     const nombreFinal = `${fecha}_${archivo.name}`;
     console.log(`✓ Nombre: ${nombreFinal}`);
@@ -871,7 +795,7 @@ async function subirAGoogleDrive(archivo, onProgress) {
         mimeType: archivo.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
         parents: [idSubcarpeta]
       };
-      
+
       const form = new FormData();
       form.append('metadata', new Blob([JSON.stringify(metadata)], { type: 'application/json' }));
       form.append('file', archivo);
@@ -879,25 +803,24 @@ async function subirAGoogleDrive(archivo, onProgress) {
       const xhr = new XMLHttpRequest();
       xhr.open('POST', 'https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,webViewLink');
       xhr.setRequestHeader('Authorization', 'Bearer ' + token);
-      
+
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) {
           const p = Math.round(40 + (e.loaded / e.total) * 50);
           onProgress(p);
         }
       };
-      
+
       xhr.onload = () => {
         console.log(`\n📨 RESPUESTA DEL SERVIDOR: ${xhr.status}\n`);
-        
+
         if (xhr.status === 200) {
           try {
             const resp = JSON.parse(xhr.responseText);
             console.log(`✅ ARCHIVO SUBIDO EXITOSAMENTE`);
             console.log(`✓ ID: ${resp.id}`);
             console.log(`✓ Link: ${resp.webViewLink}`);
-            
-            // Permisos
+
             fetch(`https://www.googleapis.com/drive/v3/files/${resp.id}/permissions`, {
               method: 'POST',
               headers: {
@@ -920,12 +843,12 @@ async function subirAGoogleDrive(archivo, onProgress) {
           reject(new Error(`HTTP ${xhr.status}: ${xhr.responseText}`));
         }
       };
-      
-      xhr.onerror = (e) => {
+
+      xhr.onerror = () => {
         console.error(`\n❌ ERROR DE RED\n`);
         reject(new Error('Error de red'));
       };
-      
+
       console.log(`📤 Enviando...`);
       xhr.send(form);
     });
@@ -966,43 +889,34 @@ async function eliminarArchivoDeGoogleDrive(fileId) {
 async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
   try {
     const token = await obtenerTokenDrive();
-    
-    // Esperar un poco para asegurar que el archivo se subió completamente
+
     await new Promise(r => setTimeout(r, 500));
-    
-    // Buscar archivos con el mismo nombre dentro de la subcarpeta
+
     const nombreSinFecha = nombreArchivo;
     const query = encodeURIComponent(
       `name like '%${nombreSinFecha}%' and '${idSubcarpeta}' in parents and trashed=false`
     );
-    
+
     console.log(`🔍 Buscando duplicados con patrón: %${nombreSinFecha}% en carpeta ${idSubcarpeta}`);
-    
+
     const response = await fetch(
       `https://www.googleapis.com/drive/v3/files?q=${query}&fields=files(id,name,createdTime,modifiedTime)&orderBy=createdTime desc`,
       { headers: { 'Authorization': 'Bearer ' + token } }
     );
-    
+
     if (!response.ok) {
       console.warn('⚠️ Error buscando duplicados en Drive:', response.status);
       return [];
     }
-    
+
     const data = await response.json();
     const archivosEncontrados = data.files || [];
     console.log(`✓ Archivos encontrados: ${archivosEncontrados.length}`);
-    
-    if (archivosEncontrados.length > 0) {
-      archivosEncontrados.forEach((f, i) => {
-        console.log(`  ${i}: ${f.name} (creado: ${f.createdTime})`);
-      });
-    }
-    
-    // Eliminar todos EXCEPTO el primero (el más reciente)
+
     if (archivosEncontrados.length > 1) {
       const archivosAEliminar = archivosEncontrados.slice(1);
       console.log(`\n🗑️ Eliminando ${archivosAEliminar.length} archivos duplicados...`);
-      
+
       let eliminadosExitosamente = 0;
       for (const archivo of archivosAEliminar) {
         try {
@@ -1012,15 +926,14 @@ async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
             console.log(`  ✓ Eliminado exitosamente`);
             eliminadosExitosamente++;
           } else {
-            console.warn(`  ✗ No se eliminó (estado de respuesta inválido)`);
+            console.warn(`  ✗ No se eliminó`);
           }
         } catch(e) {
           console.error(`  ✗ Error: ${e.message}`);
         }
-        // Pequeño delay entre eliminaciones
         await new Promise(r => setTimeout(r, 200));
       }
-      
+
       console.log(`\n✓ Proceso completado: ${eliminadosExitosamente}/${archivosAEliminar.length} eliminados`);
       return archivosAEliminar;
     } else if (archivosEncontrados.length === 1) {
@@ -1036,9 +949,8 @@ async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
   }
 }
 
-
 /* ══════════════════════════════════
-   ENVIAR ARCHIVO — ESTRATEGIA DUAL
+   ENVIAR ARCHIVO
 ══════════════════════════════════ */
 async function enviarArchivo() {
   if (!archivoSeleccionado){ toast('Selecciona un archivo Excel primero','err'); return; }
@@ -1067,7 +979,7 @@ async function enviarArchivo() {
       setProgreso(15 + Math.round(p * 0.35), `Subiendo Excel... ${Math.round(p)}%`);
     });
 
-    /* ─ Subir Acta PDF a Google Drive (misma carpeta) ─ */
+    /* ─ Subir Acta PDF a Google Drive ─ */
     setProgreso(55, 'Subiendo Acta PDF...');
     actaURL = await subirAGoogleDrive(actaSeleccionada, (p) => {
       setProgreso(55 + Math.round(p * 0.30), `Subiendo Acta... ${Math.round(p)}%`);
@@ -1075,7 +987,7 @@ async function enviarArchivo() {
 
     setProgreso(90, 'Registrando en Firestore...');
 
-    // ── Detectar si ya existe un archivo con el mismo nombre y área (reemplazo) ──
+    /* ── Detectar duplicados y eliminarlos ── */
     const { where, deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const qDup = window._fb.query(
       window._fb.collection(db,'entregas'),
@@ -1084,10 +996,9 @@ async function enviarArchivo() {
       where('area',         '==', areaVal)
     );
     const snapDup = await window._fb.getDocs(qDup);
-    
+
     console.log(`✓ Búsqueda de duplicados: ${snapDup.docs.length} registros encontrados`);
-    
-    // Eliminar los duplicados anteriores (mismo nombre + misma área)
+
     const archivosAEliminar = [];
     for (const docSnap of snapDup.docs) {
       const data = docSnap.data();
@@ -1096,13 +1007,12 @@ async function enviarArchivo() {
         nombreArchivo: data.nombreArchivo,
         driveFileId: data.driveFileId
       });
-      
       if (data.driveFileId) {
         archivosAEliminar.push(data.driveFileId);
       }
       await deleteDoc(docRef(db,'entregas', docSnap.id));
     }
-    
+
     if (archivosAEliminar.length > 0) {
       console.log('🗑️ Eliminando archivos de Google Drive:', archivosAEliminar);
       for (const fileId of archivosAEliminar) {
@@ -1118,11 +1028,11 @@ async function enviarArchivo() {
         }
       }
     }
-    
+
     const fueReemplazo = snapDup.docs.length > 0;
     console.log('Resultado: fueReemplazo =', fueReemplazo);
 
-    // Extraer driveFileId del storageURL
+    /* Extraer driveFileId del storageURL */
     let driveFileId = null;
     if (storageURL) {
       const match = storageURL.match(/\/d\/([a-zA-Z0-9-_]+)\//);
@@ -1131,7 +1041,6 @@ async function enviarArchivo() {
 
     const numRegistro = 'SISCTE-' + Date.now().toString(36).toUpperCase();
 
-    // Generar link del comprobante PDF (base64 data URL → Blob URL temporal)
     const comprobanteDataUrl = await generarComprobantePDFComoURL({
       nombre:   usuario.nombre,
       email:    usuario.email,
@@ -1170,7 +1079,6 @@ async function enviarArchivo() {
     setProgreso(100, fueReemplazo ? '¡Archivo reemplazado!' : '¡Completado!');
     mostrarExito(areaVal, fechaTexto, horaTexto);
 
-    // Enviar correo con link al comprobante (NO descarga automática)
     enviarCorreoNotificacion({
       nombre:    usuario.nombre,
       email:     usuario.email,
@@ -1183,8 +1091,9 @@ async function enviarArchivo() {
       registro:  numRegistro,
       driveLink: storageURL,
       actaLink:  actaURL,
-      comprobanteUrl: comprobanteDataUrl  // link al PDF del comprobante
+      comprobanteUrl: comprobanteDataUrl
     });
+
     setTimeout(() => ir('vista-exito'), 500);
 
   } catch(err) {
@@ -1195,63 +1104,6 @@ async function enviarArchivo() {
     resetBtn();
   }
 }
-
-    // ── Detectar si ya existe un archivo con el mismo nombre y área (reemplazo) ──
-    const { where, deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const qDup = window._fb.query(
-      window._fb.collection(db,'entregas'),
-      where('uid',          '==', usuario.uid),
-      where('nombreArchivo','==', archivoSeleccionado.name),
-      where('area',         '==', areaVal)
-    );
-    const snapDup = await window._fb.getDocs(qDup);
-    
-    console.log(`✓ Búsqueda de duplicados: ${snapDup.docs.length} registros encontrados`);
-    
-    // Eliminar los duplicados anteriores (mismo nombre + misma área)
-    const archivosAEliminar = [];
-    for (const docSnap of snapDup.docs) {
-      const data = docSnap.data();
-      console.log('🗑️ Eliminando duplicado:', {
-        id: docSnap.id,
-        nombreArchivo: data.nombreArchivo,
-        driveFileId: data.driveFileId
-      });
-      
-      if (data.driveFileId) {
-        // Guardar el ID del archivo de Drive para eliminarlo
-        archivosAEliminar.push(data.driveFileId);
-      }
-      // Eliminar el registro de Firestore
-      await deleteDoc(docRef(db,'entregas', docSnap.id));
-    }
-    
-    // Eliminar los archivos antiguos de Google Drive
-    if (archivosAEliminar.length > 0) {
-      console.log('🗑️ Eliminando archivos de Google Drive:', archivosAEliminar);
-      for (const fileId of archivosAEliminar) {
-        try {
-          const resultado = await eliminarArchivoDeGoogleDrive(fileId);
-          if (resultado) {
-            console.log('✓ Archivo de Drive eliminado:', fileId);
-          } else {
-            console.warn('⚠️ No se pudo eliminar de Drive:', fileId);
-          }
-        } catch(e) {
-          console.error('❌ Error eliminando archivo:', fileId, e);
-        }
-      }
-    }
-    
-    const fueReemplazo = snapDup.docs.length > 0;
-    console.log('Resultado: fueReemplazo =', fueReemplazo);
-
-    // Extraer el driveFileId del storageURL (formato: https://drive.google.com/file/d/{fileId}/view)
-    let driveFileId = null;
-    if (storageURL) {
-      const match = storageURL.match(/\/d\/([a-zA-Z0-9-_]+)\//);
-      if (match) driveFileId = match[1];
-    }
 
 function mostrarExito(area, fecha, hora) {
   $('ex-nombre').textContent  = usuario.nombre;
@@ -1264,8 +1116,7 @@ function mostrarExito(area, fecha, hora) {
 }
 
 /* ══════════════════════════════════
-   COMPROBANTE PDF — retorna base64
-   data URL (no descarga automática)
+   COMPROBANTE PDF
 ══════════════════════════════════ */
 async function generarComprobantePDFComoURL(d) {
   try {
@@ -1281,7 +1132,6 @@ async function generarComprobantePDFComoURL(d) {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = 210;
 
-    // Header azul
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 0, W, 42, 'F');
     doc.setTextColor(255, 255, 255);
@@ -1293,7 +1143,6 @@ async function generarComprobantePDFComoURL(d) {
     doc.text('Sistema de Gestion de Documentos Excel', 18, 28);
     doc.text('Este documento certifica el registro exitoso de tu archivo.', 18, 35);
 
-    // Badge verde
     doc.setFillColor(22, 163, 74);
     doc.roundedRect(14, 50, 52, 11, 3, 3, 'F');
     doc.setTextColor(255, 255, 255);
@@ -1305,7 +1154,6 @@ async function generarComprobantePDFComoURL(d) {
     doc.setFont('helvetica', 'normal');
     doc.text('No. de Registro: ' + d.registro, 70, 57);
 
-    // Sección datos
     const campos = [
       ['Enviado por',  d.nombre],
       ['Correo',       d.email],
@@ -1336,12 +1184,10 @@ async function generarComprobantePDFComoURL(d) {
       y += 12;
     });
 
-    // Separador
     doc.setDrawColor(229, 231, 235);
     doc.setLineWidth(0.5);
     doc.line(14, y + 2, W - 14, y + 2);
 
-    // Nota final
     y += 10;
     doc.setFillColor(239, 246, 255);
     doc.roundedRect(14, y, W - 28, 18, 3, 3, 'F');
@@ -1354,7 +1200,6 @@ async function generarComprobantePDFComoURL(d) {
     doc.text('Guarda este comprobante como respaldo de tu entrega. El archivo fue', 18, y + 12);
     doc.text('almacenado en Google Drive y el registro queda permanente en el sistema.', 18, y + 16);
 
-    // Footer
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 280, W, 17, 'F');
     doc.setTextColor(255, 255, 255);
@@ -1363,7 +1208,6 @@ async function generarComprobantePDFComoURL(d) {
     doc.text('Sistema SISCTE - Generado el ' + d.fecha + ' a las ' + d.hora, 14, 291);
     doc.text('kattyeliza2000.github.io/SISCTE', W - 14, 291, { align: 'right' });
 
-    // Retorna base64 data URL en lugar de descargar
     return doc.output('datauristring');
   } catch(e) {
     console.warn('PDF error:', e.message);
@@ -1372,13 +1216,8 @@ async function generarComprobantePDFComoURL(d) {
 }
 
 /* ══════════════════════════════════
-   EMAILJS — envía correo con links:
-   • link al Excel en Drive
-   • link al Acta en Drive
-   • link al comprobante PDF (data URL)
+   EMAILJS
 ══════════════════════════════════ */
-
-/* Inicializa EmailJS una sola vez */
 async function _initEmailJS() {
   if (!window.emailjs) {
     await new Promise((res, rej) => {
@@ -1391,11 +1230,9 @@ async function _initEmailJS() {
   }
 }
 
-/* Correo al ADMINISTRADOR — template rojo de alerta */
 async function enviarCorreoAdmin(datos) {
   try {
     await _initEmailJS();
-    // Carpeta del área en Drive (link a la carpeta raíz por defecto)
     const linkCarpeta = `https://drive.google.com/drive/folders/${GDRIVE_CARPETA_GENERAL}`;
     await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateIdAdmin, {
       usuario_nombre: datos.nombre,
@@ -1407,9 +1244,9 @@ async function enviarCorreoAdmin(datos) {
       fecha:          datos.fecha,
       hora:           datos.hora,
       registro:       datos.registro,
-      link_archivo:   datos.driveLink  || '',   // ← link al Excel en Drive
-      link_acta:      datos.actaLink   || '',   // ← link al Acta en Drive
-      link_carpeta:   linkCarpeta                // ← carpeta del área
+      link_archivo:   datos.driveLink  || '',
+      link_acta:      datos.actaLink   || '',
+      link_carpeta:   linkCarpeta
     });
     console.log('✓ Correo al admin enviado');
   } catch(e) {
@@ -1417,7 +1254,6 @@ async function enviarCorreoAdmin(datos) {
   }
 }
 
-/* Correo al USUARIO — template azul de confirmación */
 async function enviarCorreoUsuario(datos) {
   try {
     await _initEmailJS();
@@ -1431,9 +1267,9 @@ async function enviarCorreoUsuario(datos) {
       fecha:           datos.fecha,
       hora:            datos.hora,
       registro:        datos.registro,
-      drive_link:      datos.driveLink      || '',  // ← link al Excel
-      acta_link:       datos.actaLink       || '',  // ← link al Acta PDF
-      comprobante_url: datos.comprobanteUrl || ''   // ← link al comprobante PDF
+      drive_link:      datos.driveLink      || '',
+      acta_link:       datos.actaLink       || '',
+      comprobante_url: datos.comprobanteUrl || ''
     });
     toast('Correo de confirmación enviado ✓');
     console.log('✓ Correo al usuario enviado');
@@ -1442,14 +1278,12 @@ async function enviarCorreoUsuario(datos) {
   }
 }
 
-/* Función unificada — llama a ambos */
 async function enviarCorreoNotificacion(datos) {
   await Promise.allSettled([
     enviarCorreoAdmin(datos),
     enviarCorreoUsuario(datos)
   ]);
 }
-
 
 /* ══════════════════════════════════
    PANEL ADMIN
@@ -1475,7 +1309,6 @@ function renderAdmin(docs) {
   $('st-unicos').textContent = unicos.length;
   $('st-ultimo').textContent = docs.length ? `${docs[0].fechaTexto} · ${docs[0].horaTexto}` : 'Sin entregas aún';
 
-  /* Personas */
   const porPersona = {};
   docs.forEach(d => {
     if (!porPersona[d.email]) porPersona[d.email]={...d,cant:0,areas:new Set()};
@@ -1495,7 +1328,6 @@ function renderAdmin(docs) {
         <span class="persona-badge">${p.cant} archivo${p.cant>1?'s':''}</span>
       </div>`).join('') || '<p class="cargando-txt">Sin entregas</p>';
 
-  /* Tabla */
   $('tabla-body').innerHTML = docs.length===0
     ? `<tr><td colspan="9" class="td-vacio">No hay registros para los filtros aplicados</td></tr>`
     : docs.map((d,i)=>`
@@ -1588,28 +1420,20 @@ async function exportarExcel(docs, filtrado=false){
   toast(`Informe${filtrado?' filtrado':''} descargado ✓`);
 }
 
-/* ══════════════════════════════════════════════════════
+/* ══════════════════════════════════
    SISTEMA DE ARCHIVADO MENSUAL
-   ─ Descarga todos los archivos del mes seleccionado
-   ─ Pregunta confirmación antes de liberar binarios
-   ─ Conserva el historial (metadatos) para siempre
-   ─ Marca los registros como archivados en Firestore
-══════════════════════════════════════════════════════ */
-
-/* ── Habilitar botón de descarga solo si los 3 checks están marcados ── */
+══════════════════════════════════ */
 window.verificarChecks = function() {
   const ok = $('check1')?.checked && $('check2')?.checked && $('check3')?.checked;
   const btn = $('arch-btn-descargar');
   if (btn) btn.disabled = !ok;
 };
 
-/* ── Abre el modal de archivado ── */
 function abrirModalArchivado() {
-  // Construir lista de meses disponibles con archivos NO archivados
   const mesesMap = {};
   docsAdmin.forEach(d => {
     if (d.archivado) return;
-    if (!d.storageURL) return; // sin URL de Drive no se puede archivar
+    if (!d.storageURL) return;
     const mes = d.timestamp.slice(0,7);
     if (!mesesMap[mes]) mesesMap[mes] = { docs:[], label: labelMes(d.timestamp) };
     mesesMap[mes].docs.push(d);
@@ -1622,7 +1446,6 @@ function abrirModalArchivado() {
     return;
   }
 
-  // Poblar select de meses en el modal
   const sel = $('arch-mes-select');
   sel.innerHTML = '<option value="">— Selecciona el mes —</option>';
   meses.forEach(([key, val]) => {
@@ -1632,7 +1455,6 @@ function abrirModalArchivado() {
     sel.appendChild(opt);
   });
 
-  // Guardar meses en memoria para usarlos al confirmar
   window._archMeses = mesesMap;
 
   $('modal-archivado').style.display = 'flex';
@@ -1642,13 +1464,11 @@ function abrirModalArchivado() {
   $('arch-btn-siguiente').disabled = true;
 }
 
-/* ── Label legible del mes ── */
 function labelMes(isoTimestamp) {
   const d = new Date(isoTimestamp);
   return d.toLocaleDateString('es-EC', { month:'long', year:'numeric', timeZone:'America/Guayaquil' });
 }
 
-/* ── El admin seleccionó un mes: mostrar resumen ── */
 function seleccionarMesArchivado() {
   const mes = $('arch-mes-select').value;
   $('arch-btn-siguiente').disabled = !mes;
@@ -1668,7 +1488,6 @@ function seleccionarMesArchivado() {
     </div>`;
 }
 
-/* ── Avanzar a paso 2 (advertencia) ── */
 function archPaso2() {
   const mes = $('arch-mes-select').value;
   if (!mes) return;
@@ -1680,7 +1499,6 @@ function archPaso2() {
     `Después podrás eliminar los binarios de la base de datos. El historial de envíos quedará guardado permanentemente.`;
 }
 
-/* ── PASO 3: Descargar todos los archivos del mes ── */
 async function descargarMesCompleto() {
   const mes  = $('arch-mes-select').value;
   const info = window._archMeses[mes];
@@ -1706,7 +1524,6 @@ async function descargarMesCompleto() {
   $('arch-btn-archivar').onclick = () => confirmarArchivar(mes, info.docs);
 }
 
-/* ── CONFIRMAR ARCHIVADO: Marcar como archivados en Firestore ── */
 async function confirmarArchivar(mes, docs) {
   $('arch-btn-archivar').disabled = true;
   $('arch-btn-archivar').textContent = 'Archivando...';
@@ -1751,13 +1568,10 @@ function cerrarModalArchivado() {
    LIMPIAR DUPLICADOS DE GOOGLE DRIVE
 ══════════════════════════════════ */
 function abrirModalLimpiarDuplicados() {
-  // Resetear estado del modal
   $('limpieza-contenido').style.display = 'block';
   $('limpieza-progreso').style.display = 'none';
   $('check-confirmar').checked = false;
   $('btn-iniciar-limpieza').disabled = true;
-  
-  // Mostrar modal
   $('modal-limpiar-duplicados').style.display = 'flex';
 }
 
@@ -1765,7 +1579,6 @@ function cerrarModalLimpiarDuplicados() {
   $('modal-limpiar-duplicados').style.display = 'none';
 }
 
-// Habilitar botón solo si checkbox está marcado
 window.verificarCheckLimpieza = function() {
   $('btn-iniciar-limpieza').disabled = !$('check-confirmar').checked;
 };
@@ -1774,18 +1587,17 @@ async function iniciarLimpiezaDuplicados() {
   $('limpieza-contenido').style.display = 'none';
   $('limpieza-progreso').style.display = 'block';
   $('limpieza-resultados').innerHTML = '';
-  
+
   const log = (msg) => {
     const el = $('limpieza-resultados');
     el.innerHTML += msg + '\n';
     el.scrollTop = el.scrollHeight;
     console.log(msg);
   };
-  
+
   try {
     log('🔍 Iniciando búsqueda de duplicados...\n');
-    
-    // Obtener lista de todas las entregas
+
     const { where } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const qTodas = window._fb.query(
       window._fb.collection(db,'entregas'),
@@ -1793,43 +1605,37 @@ async function iniciarLimpiezaDuplicados() {
     );
     const snapTodas = await window._fb.getDocs(qTodas);
     const entregas = snapTodas.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-    
+
     log(`✓ Se cargaron ${entregas.length} entregas\n`);
-    
-    // Agrupar por nombreArchivo + area + uid para encontrar duplicados
+
     const grupos = {};
     entregas.forEach(e => {
       const key = `${e.uid}|${e.nombreArchivo}|${e.area}`;
       if (!grupos[key]) grupos[key] = [];
       grupos[key].push(e);
     });
-    
+
     let totalDuplicados = 0;
     let totalEliminados = 0;
-    const token = await obtenerTokenDrive();
-    
+
     for (const [key, grupo] of Object.entries(grupos)) {
       if (grupo.length > 1) {
         totalDuplicados += grupo.length - 1;
         log(`\n📁 ${grupo[0].nombreArchivo} (${grupo.length} versiones)`);
-        
-        // Ordenar por timestamp (más recientes primero)
+
         grupo.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-        
-        // Mantener el primero, eliminar los demás
+
         const paraEliminar = grupo.slice(1);
-        
-        for (const doc of paraEliminar) {
-          log(`  🗑️ Eliminando (${doc.timestamp})...`);
-          
-          // Eliminar de Firestore
+
+        for (const docItem of paraEliminar) {
+          log(`  🗑️ Eliminando (${docItem.timestamp})...`);
+
           const { deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-          await deleteDoc(docRef(db,'entregas', doc.id));
-          
-          // Eliminar de Drive si tiene ID
-          if (doc.driveFileId) {
+          await deleteDoc(docRef(db,'entregas', docItem.id));
+
+          if (docItem.driveFileId) {
             try {
-              await eliminarArchivoDeGoogleDrive(doc.driveFileId);
+              await eliminarArchivoDeGoogleDrive(docItem.driveFileId);
               log(`    ✓ Eliminado`);
               totalEliminados++;
             } catch(e) {
@@ -1842,20 +1648,20 @@ async function iniciarLimpiezaDuplicados() {
         }
       }
     }
-    
+
     $('limpieza-progreso-bar').style.width = '100%';
     $('limpieza-progreso-txt').textContent = '✓ Limpieza completada';
-    
+
     log(`\n✅ RESUMEN:`);
     log(`  • Registros duplicados encontrados: ${totalDuplicados}`);
     log(`  • Registros eliminados: ${totalEliminados}`);
-    
+
     setTimeout(() => {
       cerrarModalLimpiarDuplicados();
       cargarAdmin();
       toast('Duplicados limpiados correctamente ✓');
     }, 2000);
-    
+
   } catch(e) {
     console.error(e);
     log(`\n❌ Error: ${e.message}`);
@@ -1863,27 +1669,29 @@ async function iniciarLimpiezaDuplicados() {
   }
 }
 
-/* ── Exponer funciones al HTML inline ── */
-window.login                  = login;
-window.loginEmail             = loginEmail;
-window.registrarEmail         = registrarEmail;
-window.olvidoContrasena       = olvidoContrasena;
-window.abrirSelectorArchivo   = abrirSelectorArchivo;
-window.abrirSelectorActa      = abrirSelectorActa;
-window.seleccionarActa        = seleccionarActa;
-window.quitarActa             = quitarActa;
-window.abrirModalArchivado    = abrirModalArchivado;
-window.cerrarModalArchivado   = cerrarModalArchivado;
+/* ══════════════════════════════════
+   EXPONER FUNCIONES AL HTML INLINE
+══════════════════════════════════ */
+window.login                       = login;
+window.loginEmail                  = loginEmail;
+window.registrarEmail              = registrarEmail;
+window.olvidoContrasena            = olvidoContrasena;
+window.abrirSelectorArchivo        = abrirSelectorArchivo;
+window.abrirSelectorActa           = abrirSelectorActa;
+window.seleccionarActa             = seleccionarActa;
+window.quitarActa                  = quitarActa;
+window.abrirModalArchivado         = abrirModalArchivado;
+window.cerrarModalArchivado        = cerrarModalArchivado;
 window.abrirModalLimpiarDuplicados = abrirModalLimpiarDuplicados;
 window.cerrarModalLimpiarDuplicados = cerrarModalLimpiarDuplicados;
-window.verificarCheckLimpieza = verificarCheckLimpieza;
-window.iniciarLimpiezaDuplicados = iniciarLimpiezaDuplicados;
-window.irSubir                = irSubir;
-window.seleccionarMesArchivado = seleccionarMesArchivado;
-window.archPaso2              = archPaso2;
-window.descargarMesCompleto   = descargarMesCompleto;
-window.ir                     = ir;
-window.show                   = show;
-window.hide                   = hide;
-window.toast                  = toast;
-window.$                      = $;
+window.verificarCheckLimpieza      = verificarCheckLimpieza;
+window.iniciarLimpiezaDuplicados   = iniciarLimpiezaDuplicados;
+window.irSubir                     = irSubir;
+window.seleccionarMesArchivado     = seleccionarMesArchivado;
+window.archPaso2                   = archPaso2;
+window.descargarMesCompleto        = descargarMesCompleto;
+window.ir                          = ir;
+window.show                        = show;
+window.hide                        = hide;
+window.toast                       = toast;
+window.$                           = $;
