@@ -211,6 +211,37 @@
           </div>
         </div>
 
+        <!-- Acta PDF (obligatorio) -->
+        <div class="form-field">
+          <label class="form-label">
+            Acta PDF
+            <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;">OBLIGATORIO</span>
+          </label>
+          <div id="acta-dropzone" class="dropzone" onclick="abrirSelectorActa()"
+               ondragover="event.preventDefault();this.classList.add('dz-over')"
+               ondragleave="this.classList.remove('dz-over')"
+               ondrop="event.preventDefault();this.classList.remove('dz-over');if(event.dataTransfer.files[0])seleccionarActa(event.dataTransfer.files[0])">
+            <div class="dz-upload-ico">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="12" x2="15" y2="12"/><line x1="9" y1="16" x2="15" y2="16"/></svg>
+            </div>
+            <span class="dz-label">Hacé clic para seleccionar el Acta</span>
+            <span class="dz-hint">Solo .pdf</span>
+          </div>
+          <input type="file" id="acta-input" accept=".pdf" style="display:none" onchange="if(this.files[0])seleccionarActa(this.files[0])">
+
+          <div id="acta-preview" class="file-preview" style="display:none">
+            <div class="fp-ico">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#dc2626" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+            </div>
+            <div class="fp-info">
+              <div id="acta-nombre" class="fp-nombre"></div>
+              <div id="acta-peso" class="fp-peso"></div>
+              <div class="fp-modo">📄 Acta PDF</div>
+            </div>
+            <button id="btn-cambiar-acta" class="fp-cambiar" onclick="quitarActa()">✕</button>
+          </div>
+        </div>
+
         <!-- Barra de progreso -->
         <div id="progress-wrap" class="progress-wrap">
           <div class="progress-header">
@@ -222,10 +253,11 @@
         </div>
 
         <!-- Botón principal -->
-        <button class="btn-registrar" id="btn-enviar">
+        <button class="btn-registrar" id="btn-enviar" disabled style="opacity:0.45;cursor:not-allowed;">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
           Registrar Envío
         </button>
+        <p id="enviar-hint" style="text-align:center;font-size:12px;color:#ef4444;margin-top:6px;">Sube el Excel y el Acta PDF para habilitar el envío</p>
       </div>
 
       <!-- ── Separador ── -->
