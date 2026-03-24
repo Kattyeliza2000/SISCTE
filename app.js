@@ -49,8 +49,8 @@ const FIREBASE_CONFIG = {
 const EMAILJS_CONFIG = {
   publicKey:          "gaScEoguCEcx7aFYT",
   serviceId:          "service_ybvnh3i",
-  templateIdAdmin:    "template_kxdf3rr",   // ← correo al administrador (HTML rojo)
-  templateIdUsuario:  "template_8d6u82j"    // ← correo al usuario (HTML azul)
+  templateIdAdmin:    "template_8d6u82j",   // ← correo al administrador (HTML rojo)
+  templateIdUsuario:  "template_XXXXXXX"    // ← ⚠️ REEMPLAZA con tu nuevo template ID del usuario
 };
 
 /* Google Drive API — todos los archivos se suben aquí */
