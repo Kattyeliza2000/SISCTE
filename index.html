@@ -79,18 +79,13 @@
         </div>
       </div>
 
-      <!-- Panel derecho -->
+      <!-- Panel derecho — SOLO GOOGLE -->
       <div class="login-panel-right">
 
-      <!-- Tabs -->
-      <div class="auth-tabs">
-        <button class="auth-tab active" id="tab-login" onclick="switchTab('login')">Iniciar sesión</button>
-        <button class="auth-tab" id="tab-registro" onclick="switchTab('registro')">Registrarse</button>
-      </div>
-
-      <!-- PANEL: Iniciar sesión -->
-      <div id="panel-login">
-        <p class="login-card-desc">Accede con tu cuenta Google o con correo y contraseña.</p>
+        <div style="margin-bottom:24px;">
+          <h2 style="font-size:20px;font-weight:800;margin-bottom:6px;color:var(--txt);">Bienvenido</h2>
+          <p class="login-card-desc">Accede con tu cuenta institucional de Google para continuar.</p>
+        </div>
 
         <!-- Google -->
         <button class="btn-google" id="btn-google" onclick="login()">
@@ -103,45 +98,11 @@
           Acceder con Google
         </button>
 
-        <div class="auth-divider"><span>o</span></div>
-
-        <!-- Email/Password login -->
-        <div class="form-field">
-          <label class="form-label">Correo electrónico</label>
-          <input type="email" id="login-email" class="form-input" placeholder="tucorreo@ejemplo.com">
-        </div>
-        <div class="form-field">
-          <label class="form-label">Contraseña</label>
-          <input type="password" id="login-pass" class="form-input" placeholder="••••••••">
-        </div>
-        <button class="btn-primary-full" id="btn-login-email">Iniciar sesión</button>
-        <div style="text-align:center;margin-top:10px;">
-          <button class="btn-link" id="btn-forgot">¿Olvidaste tu contraseña?</button>
-        </div>
-      </div>
-
-      <!-- PANEL: Registrarse -->
-      <div id="panel-registro" style="display:none">
-        <p class="login-card-desc">Crea tu cuenta con correo y contraseña para acceder al sistema.</p>
-        <div class="form-field">
-          <label class="form-label">Nombre completo</label>
-          <input type="text" id="reg-nombre" class="form-input" placeholder="Tu nombre completo">
-        </div>
-        <div class="form-field">
-          <label class="form-label">Correo electrónico</label>
-          <input type="email" id="reg-email" class="form-input" placeholder="tucorreo@ejemplo.com">
-        </div>
-        <div class="form-field">
-          <label class="form-label">Contraseña</label>
-          <input type="password" id="reg-pass" class="form-input" placeholder="Mínimo 6 caracteres">
-        </div>
-        <button class="btn-primary-full" id="btn-registrar">Crear cuenta</button>
-      </div>
-
-        <div class="info-note" style="margin-top:16px">
+        <div class="info-note" style="margin-top:20px">
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-          Al enviar recibirás un correo de confirmación automático.
+          Al ingresar recibirás un correo de confirmación automático con cada envío.
         </div>
+
       </div><!-- /login-panel-right -->
     </div><!-- /login-card -->
   </div>
@@ -194,7 +155,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#6b7280" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
             </div>
             <span class="dz-label">Hacé clic para seleccionar</span>
-            <span class="dz-hint">Solo .xlsx o .xlsx</span>
+            <span class="dz-hint">Solo .xlsx o .xls</span>
           </div>
           <input type="file" id="file-input" accept=".xlsx,.xls">
 
@@ -337,9 +298,10 @@
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="21 8 21 21 3 21 3 8"/><rect x="1" y="3" width="22" height="5"/><line x1="10" y1="12" x2="14" y2="12"/></svg>
             Archivar mes
           </button>
+          <!-- ★ BOTÓN RENOMBRADO ★ -->
           <button class="btn-acc btn-acc-red" onclick="abrirModalLimpiarDuplicados()">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 4 21 4"/><line x1="19" y1="4" x2="21" y2="6"/><path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"/></svg>
-            Limpiar duplicados
+            Eliminar Registros BD
           </button>
           <button class="btn-acc btn-acc-ghost" onclick="irSubir()">← Volver a Envíos</button>
         </div>
@@ -425,7 +387,7 @@
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 4 21 4"/><line x1="19" y1="4" x2="21" y2="6"/><path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7"/></svg>
       </div>
       <div>
-        <div class="modal-titulo">Limpiar duplicados</div>
+        <div class="modal-titulo">Eliminar Registros BD</div>
         <div class="modal-sub">Busca y elimina archivos duplicados en Google Drive</div>
       </div>
       <button class="modal-cerrar" onclick="cerrarModalLimpiarDuplicados()">✕</button>
