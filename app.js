@@ -47,9 +47,10 @@ const FIREBASE_CONFIG = {
    4. Account → API Keys → Public Key
 ──────────────────────────────────────────────────────── */
 const EMAILJS_CONFIG = {
-  publicKey:  "gaScEoguCEcx7aFYT",
-  serviceId:  "service_ybvnh3i",
-  templateId: "template_8d6u82j"
+  publicKey:          "gaScEoguCEcx7aFYT",
+  serviceId:          "service_ybvnh3i",
+  templateIdAdmin:    "template_kxdf3rr",   // ← correo al administrador (HTML rojo)
+  templateIdUsuario:  "template_8d6u82j"    // ← correo al usuario (HTML azul)
 };
 
 /* Google Drive API — todos los archivos se suben aquí */
@@ -79,6 +80,7 @@ const AREAS = [
 
 let db, auth, usuario = null;
 let archivoSeleccionado = null;
+let actaSeleccionada = null;   // ← Acta PDF obligatoria
 let docsAdmin = [];
 let _firebaseReady = null; // Promesa que resuelve cuando Firebase está listo
 
@@ -98,7 +100,7 @@ async function initFirebase() {
     const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
       getRedirectResult, signOut, onAuthStateChanged,
       createUserWithEmailAndPassword, signInWithEmailAndPassword,
-      sendPasswordResetEmail, updateProfile }
+      sendPasswordResetEmail, sendEmailVerification, updateProfile }
       = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
 
     console.log('Firebase modules cargados, inicializando app...');
@@ -112,7 +114,7 @@ async function initFirebase() {
       GoogleAuthProvider, signInWithPopup, signInWithRedirect,
       getRedirectResult, signOut, onAuthStateChanged,
       createUserWithEmailAndPassword, signInWithEmailAndPassword,
-      sendPasswordResetEmail, updateProfile
+      sendPasswordResetEmail, sendEmailVerification, updateProfile
     };
 
     // Capturar resultado del redirect de Google si viene de uno
@@ -216,6 +218,24 @@ async function loginEmail() {
   try {
     const cred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
     await cred.user.reload();
+
+    // Bloquear acceso si el correo no fue verificado (solo aplica a cuentas email/pass)
+    if (!cred.user.emailVerified) {
+      await window._fb.signOut(auth);
+      toast('Debes verificar tu correo antes de iniciar sesión. Revisa tu bandeja de entrada.', 'err');
+      // Ofrecer reenviar el correo de verificación
+      const reenviar = confirm('¿Deseas que te reenviemos el correo de verificación?');
+      if (reenviar) {
+        try {
+          // Necesitamos iniciar sesión temporalmente para reenviar
+          const tempCred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
+          await window._fb.sendEmailVerification(tempCred.user);
+          await window._fb.signOut(auth);
+          toast('Correo de verificación reenviado ✓ Revisa tu bandeja');
+        } catch(e2) { console.warn('reenvío:', e2); }
+      }
+      return;
+    }
   } catch(e) {
     const msg = e.code === 'auth/invalid-credential' ? 'Correo o contraseña incorrectos'
               : e.code === 'auth/user-not-found'     ? 'No existe una cuenta con ese correo'
@@ -232,14 +252,29 @@ async function registrarEmail() {
   const pass   = document.getElementById('reg-pass')?.value;
   if (!nombre) { toast('Ingresa tu nombre completo','err'); return; }
   if (!email)  { toast('Ingresa tu correo','err'); return; }
+
+  // Validar formato básico del correo antes de ir al servidor
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
+  if (!emailRegex.test(email)) { toast('El formato del correo no es válido','err'); return; }
+
   if (!pass || pass.length < 6) { toast('La contraseña debe tener al menos 6 caracteres','err'); return; }
   try {
     const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
     await window._fb.updateProfile(cred.user, { displayName: nombre });
-    await cred.user.reload();
-    usuario = { uid: cred.user.uid, nombre: nombre, email: cred.user.email, foto: cred.user.photoURL };
-    actualizarNav();
-    toast('Cuenta creada exitosamente');
+
+    // Enviar correo de verificación — valida que el correo existe realmente
+    await window._fb.sendEmailVerification(cred.user);
+
+    // Cerrar sesión hasta que el usuario verifique su correo
+    await window._fb.signOut(auth);
+
+    toast('✉️ Te enviamos un correo de verificación a ' + email + '. Confírmalo antes de iniciar sesión.');
+
+    // Limpiar formulario y volver a login
+    document.getElementById('reg-nombre').value = '';
+    document.getElementById('reg-email').value  = '';
+    document.getElementById('reg-pass').value   = '';
+    window.switchTab('login');
   } catch(e) {
     const msg = e.code === 'auth/email-already-in-use' ? 'Ya existe una cuenta con ese correo'
               : e.code === 'auth/invalid-email'        ? 'Correo no válido'
@@ -333,13 +368,14 @@ function actualizarNav() {
 function resetBtn() {
   const btn = $('btn-enviar');
   if (!btn) return;
-  btn.disabled = false;
   btn.innerHTML = `
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
       <polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/>
     </svg> Registrar Envío`;
+  // El estado del botón lo controla actualizarBotonEnviar()
+  actualizarBotonEnviar();
 }
 
 /* ══════════════════════════════════
@@ -360,17 +396,24 @@ function poblarAreas(selectId, placeholder='— Selecciona tu área —') {
    VISTA SUBIR
 ══════════════════════════════════ */
 function irSubir() {
-  // Limpiar estado del archivo
+  // Limpiar estado del archivo Excel
   archivoSeleccionado = null;
+  // Limpiar estado del acta PDF
+  actaSeleccionada = null;
 
-  // CRÍTICO: resetear el input file para que el evento change
-  // se dispare incluso si el usuario selecciona el mismo archivo
+  // CRÍTICO: resetear los inputs file
   const fi = $('file-input');
   if (fi) fi.value = '';
+  const ai = $('acta-input');
+  if (ai) ai.value = '';
 
-  // Limpiar UI del formulario
+  // Limpiar UI del formulario Excel
   $('dropzone').style.display    = 'flex';
   $('file-preview').style.display = 'none';
+  // Limpiar UI del acta
+  const actaDz = $('acta-dropzone'); if (actaDz) actaDz.style.display = 'flex';
+  const actaPrev = $('acta-preview'); if (actaPrev) actaPrev.style.display = 'none';
+
   $('progress-wrap').style.display = 'none';
   $('area-select').value = '';
   const det = $('detalle-envio'); if (det) det.value = '';
@@ -381,7 +424,7 @@ function irSubir() {
   const ptxt = $('progress-txt');
   if (ptxt) ptxt.textContent = '0%';
 
-  resetBtn();
+  resetBtn(); // llama actualizarBotonEnviar() internamente
 
   const heroNombre = $('hero-nombre');
   if (heroNombre) heroNombre.textContent = usuario?.nombre || usuario?.email || '';
@@ -542,6 +585,26 @@ function abrirSelectorArchivo() {
   document.body.appendChild(input);
   input.click();
 }
+
+function abrirSelectorActa() {
+  const input = document.createElement('input');
+  input.type   = 'file';
+  input.accept = '.pdf';
+  input.style.display = 'none';
+  input.addEventListener('change', () => {
+    if (input.files[0]) seleccionarActa(input.files[0]);
+    input.remove();
+  });
+  document.body.appendChild(input);
+  input.click();
+}
+
+function quitarActa() {
+  actaSeleccionada = null;
+  const actaDz = $('acta-dropzone'); if (actaDz) actaDz.style.display = 'flex';
+  const actaPrev = $('acta-preview'); if (actaPrev) actaPrev.style.display = 'none';
+  actualizarBotonEnviar();
+}
 function seleccionar(f) {
   const ext = f.name.split('.').pop().toLowerCase();
   if (!['xlsx','xls'].includes(ext)) {
@@ -551,9 +614,49 @@ function seleccionar(f) {
   $('fp-nombre').textContent = f.name;
   $('fp-peso').textContent   = formatSize(f.size);
   const modoEl = $('fp-modo');
-  if (modoEl) modoEl.textContent = '☁️ Google Drive';
+  if (modoEl) modoEl.textContent = '\u2601\ufe0f Google Drive';
   $('dropzone').style.display     = 'none';
   $('file-preview').style.display = 'flex';
+  actualizarBotonEnviar();
+}
+
+function seleccionarActa(f) {
+  if (!f) return;
+  const ext = f.name.split('.').pop().toLowerCase();
+  if (ext !== 'pdf') {
+    toast('El acta debe ser un archivo PDF (.pdf)', 'err'); return;
+  }
+  actaSeleccionada = f;
+  const actaDropzone = $('acta-dropzone');
+  const actaPreview  = $('acta-preview');
+  const actaNombre   = $('acta-nombre');
+  const actaPeso     = $('acta-peso');
+  if (actaNombre) actaNombre.textContent = f.name;
+  if (actaPeso)   actaPeso.textContent   = formatSize(f.size);
+  if (actaDropzone) actaDropzone.style.display = 'none';
+  if (actaPreview)  actaPreview.style.display  = 'flex';
+  actualizarBotonEnviar();
+}
+
+function actualizarBotonEnviar() {
+  const btn = $('btn-enviar');
+  if (!btn) return;
+  const listo = !!(archivoSeleccionado && actaSeleccionada);
+  btn.disabled      = !listo;
+  btn.style.opacity = listo ? '1' : '0.45';
+  btn.style.cursor  = listo ? 'pointer' : 'not-allowed';
+  const hint = $('enviar-hint');
+  if (hint) {
+    if (!archivoSeleccionado && !actaSeleccionada) {
+      hint.textContent = 'Sube el Excel y el Acta PDF para habilitar el envío';
+    } else if (!archivoSeleccionado) {
+      hint.textContent = 'Falta el archivo Excel';
+    } else if (!actaSeleccionada) {
+      hint.textContent = 'Falta el Acta PDF (obligatorio)';
+    } else {
+      hint.textContent = '';
+    }
+  }
 }
 
 function formatSize(bytes) {
@@ -938,7 +1041,8 @@ async function buscarYEliminarDuplicadosEnDrive(nombreArchivo, idSubcarpeta) {
    ENVIAR ARCHIVO — ESTRATEGIA DUAL
 ══════════════════════════════════ */
 async function enviarArchivo() {
-  if (!archivoSeleccionado){ toast('Selecciona un archivo primero','err'); return; }
+  if (!archivoSeleccionado){ toast('Selecciona un archivo Excel primero','err'); return; }
+  if (!actaSeleccionada){    toast('El Acta PDF es obligatoria','err'); return; }
   const areaVal = $('area-select').value;
   if (!areaVal){ toast('Debes seleccionar tu área antes de enviar','err'); return; }
   const detalleVal = ($('detalle-envio')?.value||'').trim();
@@ -955,15 +1059,142 @@ async function enviarArchivo() {
     const horaTexto  = ahora.toLocaleTimeString('es-EC',{timeZone:'America/Guayaquil',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
     let storageURL = null;
+    let actaURL    = null;
 
-    /* ─ Subir a Google Drive ─ */
-    setProgreso(20, 'Conectando con Google Drive...');
-    
+    /* ─ Subir Excel a Google Drive ─ */
+    setProgreso(15, 'Subiendo Excel a Google Drive...');
     storageURL = await subirAGoogleDrive(archivoSeleccionado, (p) => {
-      setProgreso(20 + Math.round(p * 0.6), `Subiendo... ${Math.round(p)}%`);
+      setProgreso(15 + Math.round(p * 0.35), `Subiendo Excel... ${Math.round(p)}%`);
+    });
+
+    /* ─ Subir Acta PDF a Google Drive (misma carpeta) ─ */
+    setProgreso(55, 'Subiendo Acta PDF...');
+    actaURL = await subirAGoogleDrive(actaSeleccionada, (p) => {
+      setProgreso(55 + Math.round(p * 0.30), `Subiendo Acta... ${Math.round(p)}%`);
     });
 
     setProgreso(90, 'Registrando en Firestore...');
+
+    // ── Detectar si ya existe un archivo con el mismo nombre y área (reemplazo) ──
+    const { where, deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    const qDup = window._fb.query(
+      window._fb.collection(db,'entregas'),
+      where('uid',          '==', usuario.uid),
+      where('nombreArchivo','==', archivoSeleccionado.name),
+      where('area',         '==', areaVal)
+    );
+    const snapDup = await window._fb.getDocs(qDup);
+    
+    console.log(`✓ Búsqueda de duplicados: ${snapDup.docs.length} registros encontrados`);
+    
+    // Eliminar los duplicados anteriores (mismo nombre + misma área)
+    const archivosAEliminar = [];
+    for (const docSnap of snapDup.docs) {
+      const data = docSnap.data();
+      console.log('🗑️ Eliminando duplicado:', {
+        id: docSnap.id,
+        nombreArchivo: data.nombreArchivo,
+        driveFileId: data.driveFileId
+      });
+      
+      if (data.driveFileId) {
+        archivosAEliminar.push(data.driveFileId);
+      }
+      await deleteDoc(docRef(db,'entregas', docSnap.id));
+    }
+    
+    if (archivosAEliminar.length > 0) {
+      console.log('🗑️ Eliminando archivos de Google Drive:', archivosAEliminar);
+      for (const fileId of archivosAEliminar) {
+        try {
+          const resultado = await eliminarArchivoDeGoogleDrive(fileId);
+          if (resultado) {
+            console.log('✓ Archivo de Drive eliminado:', fileId);
+          } else {
+            console.warn('⚠️ No se pudo eliminar de Drive:', fileId);
+          }
+        } catch(e) {
+          console.error('❌ Error eliminando archivo:', fileId, e);
+        }
+      }
+    }
+    
+    const fueReemplazo = snapDup.docs.length > 0;
+    console.log('Resultado: fueReemplazo =', fueReemplazo);
+
+    // Extraer driveFileId del storageURL
+    let driveFileId = null;
+    if (storageURL) {
+      const match = storageURL.match(/\/d\/([a-zA-Z0-9-_]+)\//);
+      if (match) driveFileId = match[1];
+    }
+
+    const numRegistro = 'SISCTE-' + Date.now().toString(36).toUpperCase();
+
+    // Generar link del comprobante PDF (base64 data URL → Blob URL temporal)
+    const comprobanteDataUrl = await generarComprobantePDFComoURL({
+      nombre:   usuario.nombre,
+      email:    usuario.email,
+      area:     areaVal,
+      archivo:  archivoSeleccionado.name,
+      acta:     actaSeleccionada.name,
+      tamano:   formatSize(archivoSeleccionado.size),
+      fecha:    fechaTexto,
+      hora:     horaTexto,
+      registro: numRegistro,
+      driveLink: storageURL,
+      actaLink:  actaURL
+    });
+
+    await window._fb.addDoc(window._fb.collection(db,'entregas'),{
+      uid:           usuario.uid,
+      nombre:        usuario.nombre,
+      email:         usuario.email,
+      foto:          usuario.foto,
+      area:          areaVal,
+      nombreArchivo: archivoSeleccionado.name,
+      nombreActa:    actaSeleccionada.name,
+      tamanoBytes:   archivoSeleccionado.size,
+      tamanoTexto:   formatSize(archivoSeleccionado.size),
+      metodo:        'google_drive',
+      storageURL,
+      actaURL,
+      driveFileId,
+      detalle:       detalleVal,
+      registro:      numRegistro,
+      fechaTexto,
+      horaTexto,
+      timestamp:     ahora.toISOString()
+    });
+
+    setProgreso(100, fueReemplazo ? '¡Archivo reemplazado!' : '¡Completado!');
+    mostrarExito(areaVal, fechaTexto, horaTexto);
+
+    // Enviar correo con link al comprobante (NO descarga automática)
+    enviarCorreoNotificacion({
+      nombre:    usuario.nombre,
+      email:     usuario.email,
+      area:      areaVal,
+      archivo:   archivoSeleccionado.name,
+      acta:      actaSeleccionada.name,
+      tamano:    formatSize(archivoSeleccionado.size),
+      fecha:     fechaTexto,
+      hora:      horaTexto,
+      registro:  numRegistro,
+      driveLink: storageURL,
+      actaLink:  actaURL,
+      comprobanteUrl: comprobanteDataUrl  // link al PDF del comprobante
+    });
+    setTimeout(() => ir('vista-exito'), 500);
+
+  } catch(err) {
+    console.error(err);
+    const msg = err?.message || (typeof err === 'string' ? err : 'Error desconocido al subir');
+    toast('Error al subir: ' + msg, 'err');
+    $('progress-wrap').style.display='none';
+    resetBtn();
+  }
+}
 
     // ── Detectar si ya existe un archivo con el mismo nombre y área (reemplazo) ──
     const { where, deleteDoc, doc: docRef } = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
@@ -1022,61 +1253,6 @@ async function enviarArchivo() {
       if (match) driveFileId = match[1];
     }
 
-    await window._fb.addDoc(window._fb.collection(db,'entregas'),{
-      uid:           usuario.uid,
-      nombre:        usuario.nombre,
-      email:         usuario.email,
-      foto:          usuario.foto,
-      area:          areaVal,
-      nombreArchivo: archivoSeleccionado.name,
-      tamanoBytes:   archivoSeleccionado.size,
-      tamanoTexto:   formatSize(archivoSeleccionado.size),
-      metodo:        'google_drive',
-      storageURL,
-      driveFileId,    // ← Guardar el ID del archivo de Drive
-      detalle:       detalleVal,
-      fechaTexto,
-      horaTexto,
-      timestamp:     ahora.toISOString()
-    });
-
-    setProgreso(100, fueReemplazo ? '¡Archivo reemplazado!' : '¡Completado!');
-    mostrarExito(areaVal, fechaTexto, horaTexto);
-
-    const numRegistro = 'SISCTE-' + Date.now().toString(36).toUpperCase();
-
-    generarComprobantePDF({
-      nombre:   usuario.nombre,
-      email:    usuario.email,
-      area:     areaVal,
-      archivo:  archivoSeleccionado.name,
-      tamano:   formatSize(archivoSeleccionado.size),
-      fecha:    fechaTexto,
-      hora:     horaTexto,
-      registro: numRegistro
-    });
-
-    enviarCorreoNotificacion({
-      nombre:   usuario.nombre,
-      email:    usuario.email,
-      area:     areaVal,
-      archivo:  archivoSeleccionado.name,
-      tamano:   formatSize(archivoSeleccionado.size),
-      fecha:    fechaTexto,
-      hora:     horaTexto,
-      registro: numRegistro
-    });
-    setTimeout(() => ir('vista-exito'), 500);
-
-  } catch(err) {
-    console.error(err);
-    const msg = err?.message || (typeof err === 'string' ? err : 'Error desconocido al subir');
-    toast('Error al subir: ' + msg, 'err');
-    $('progress-wrap').style.display='none';
-    resetBtn();
-  }
-}
-
 function mostrarExito(area, fecha, hora) {
   $('ex-nombre').textContent  = usuario.nombre;
   $('ex-email').textContent   = usuario.email;
@@ -1088,10 +1264,10 @@ function mostrarExito(area, fecha, hora) {
 }
 
 /* ══════════════════════════════════
-   COMPROBANTE PDF — se descarga
-   automáticamente al enviar
+   COMPROBANTE PDF — retorna base64
+   data URL (no descarga automática)
 ══════════════════════════════════ */
-async function generarComprobantePDF(d) {
+async function generarComprobantePDFComoURL(d) {
   try {
     if (!window.jspdf) {
       await new Promise((res, rej) => {
@@ -1105,11 +1281,9 @@ async function generarComprobantePDF(d) {
     const doc = new jsPDF({ unit: 'mm', format: 'a4' });
     const W = 210;
 
-    // ── Header azul ──
+    // Header azul
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 0, W, 42, 'F');
-
-    // Título
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(16);
     doc.setFont('helvetica', 'bold');
@@ -1119,26 +1293,25 @@ async function generarComprobantePDF(d) {
     doc.text('Sistema de Gestion de Documentos Excel', 18, 28);
     doc.text('Este documento certifica el registro exitoso de tu archivo.', 18, 35);
 
-    // ── Badge verde "REGISTRADO" ──
+    // Badge verde
     doc.setFillColor(22, 163, 74);
     doc.roundedRect(14, 50, 52, 11, 3, 3, 'F');
     doc.setTextColor(255, 255, 255);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'bold');
     doc.text('REGISTRADO', 19, 57.5);
-
-    // N° de registro
     doc.setTextColor(107, 114, 128);
     doc.setFontSize(8);
     doc.setFont('helvetica', 'normal');
     doc.text('No. de Registro: ' + d.registro, 70, 57);
 
-    // ── Seccion datos ──
+    // Sección datos
     const campos = [
       ['Enviado por',  d.nombre],
       ['Correo',       d.email],
       ['Area',         d.area],
-      ['Archivo',      d.archivo],
+      ['Archivo Excel',d.archivo],
+      ['Acta PDF',     d.acta || '-'],
       ['Tamano',       d.tamano],
       ['Fecha',        d.fecha],
       ['Hora',         d.hora],
@@ -1163,12 +1336,12 @@ async function generarComprobantePDF(d) {
       y += 12;
     });
 
-    // ── Linea separadora ──
+    // Separador
     doc.setDrawColor(229, 231, 235);
     doc.setLineWidth(0.5);
     doc.line(14, y + 2, W - 14, y + 2);
 
-    // ── Nota final ──
+    // Nota final
     y += 10;
     doc.setFillColor(239, 246, 255);
     doc.roundedRect(14, y, W - 28, 18, 3, 3, 'F');
@@ -1181,7 +1354,7 @@ async function generarComprobantePDF(d) {
     doc.text('Guarda este comprobante como respaldo de tu entrega. El archivo fue', 18, y + 12);
     doc.text('almacenado en Google Drive y el registro queda permanente en el sistema.', 18, y + 16);
 
-    // ── Footer ──
+    // Footer
     doc.setFillColor(37, 99, 235);
     doc.rect(0, 280, W, 17, 'F');
     doc.setTextColor(255, 255, 255);
@@ -1190,42 +1363,93 @@ async function generarComprobantePDF(d) {
     doc.text('Sistema SISCTE - Generado el ' + d.fecha + ' a las ' + d.hora, 14, 291);
     doc.text('kattyeliza2000.github.io/SISCTE', W - 14, 291, { align: 'right' });
 
-    doc.save('Comprobante_SISCTE_' + d.registro + '.pdf');
-    toast('Comprobante PDF descargado');
+    // Retorna base64 data URL en lugar de descargar
+    return doc.output('datauristring');
   } catch(e) {
     console.warn('PDF error:', e.message);
+    return null;
   }
 }
 
 /* ══════════════════════════════════
-   EMAILJS
+   EMAILJS — envía correo con links:
+   • link al Excel en Drive
+   • link al Acta en Drive
+   • link al comprobante PDF (data URL)
 ══════════════════════════════════ */
-async function enviarCorreoNotificacion(datos) {
-  try {
-    if (!window.emailjs) {
-      await new Promise((res,rej) => {
-        const s = document.createElement('script');
-        s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-        s.onload=res; s.onerror=rej;
-        document.head.appendChild(s);
-      });
-      emailjs.init(EMAILJS_CONFIG.publicKey);
-    }
-    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateId, {
-      to_email: datos.email,
-      to_name:  datos.nombre,
-      area:     datos.area,
-      archivo:  datos.archivo,
-      tamano:   datos.tamano,
-      fecha:    datos.fecha,
-      hora:     datos.hora,
-      registro: datos.registro
+
+/* Inicializa EmailJS una sola vez */
+async function _initEmailJS() {
+  if (!window.emailjs) {
+    await new Promise((res, rej) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
+      s.onload = res; s.onerror = rej;
+      document.head.appendChild(s);
     });
-    toast('Correo de confirmación enviado ✓');
-  } catch(e) {
-    console.warn('EmailJS:', e.message||e);
+    emailjs.init(EMAILJS_CONFIG.publicKey);
   }
 }
+
+/* Correo al ADMINISTRADOR — template rojo de alerta */
+async function enviarCorreoAdmin(datos) {
+  try {
+    await _initEmailJS();
+    // Carpeta del área en Drive (link a la carpeta raíz por defecto)
+    const linkCarpeta = `https://drive.google.com/drive/folders/${GDRIVE_CARPETA_GENERAL}`;
+    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateIdAdmin, {
+      usuario_nombre: datos.nombre,
+      usuario_email:  datos.email,
+      area:           datos.area,
+      archivo:        datos.archivo,
+      acta:           datos.acta || '-',
+      tamano:         datos.tamano,
+      fecha:          datos.fecha,
+      hora:           datos.hora,
+      registro:       datos.registro,
+      link_archivo:   datos.driveLink  || '',   // ← link al Excel en Drive
+      link_acta:      datos.actaLink   || '',   // ← link al Acta en Drive
+      link_carpeta:   linkCarpeta                // ← carpeta del área
+    });
+    console.log('✓ Correo al admin enviado');
+  } catch(e) {
+    console.warn('EmailJS admin:', e.message || e);
+  }
+}
+
+/* Correo al USUARIO — template azul de confirmación */
+async function enviarCorreoUsuario(datos) {
+  try {
+    await _initEmailJS();
+    await emailjs.send(EMAILJS_CONFIG.serviceId, EMAILJS_CONFIG.templateIdUsuario, {
+      to_email:        datos.email,
+      to_name:         datos.nombre,
+      area:            datos.area,
+      archivo:         datos.archivo,
+      acta:            datos.acta || '-',
+      tamano:          datos.tamano,
+      fecha:           datos.fecha,
+      hora:            datos.hora,
+      registro:        datos.registro,
+      drive_link:      datos.driveLink      || '',  // ← link al Excel
+      acta_link:       datos.actaLink       || '',  // ← link al Acta PDF
+      comprobante_url: datos.comprobanteUrl || ''   // ← link al comprobante PDF
+    });
+    toast('Correo de confirmación enviado ✓');
+    console.log('✓ Correo al usuario enviado');
+  } catch(e) {
+    console.warn('EmailJS usuario:', e.message || e);
+  }
+}
+
+/* Función unificada — llama a ambos */
+async function enviarCorreoNotificacion(datos) {
+  await Promise.allSettled([
+    enviarCorreoAdmin(datos),
+    enviarCorreoUsuario(datos)
+  ]);
+}
+
 
 /* ══════════════════════════════════
    PANEL ADMIN
@@ -1644,6 +1868,10 @@ window.login                  = login;
 window.loginEmail             = loginEmail;
 window.registrarEmail         = registrarEmail;
 window.olvidoContrasena       = olvidoContrasena;
+window.abrirSelectorArchivo   = abrirSelectorArchivo;
+window.abrirSelectorActa      = abrirSelectorActa;
+window.seleccionarActa        = seleccionarActa;
+window.quitarActa             = quitarActa;
 window.abrirModalArchivado    = abrirModalArchivado;
 window.cerrarModalArchivado   = cerrarModalArchivado;
 window.abrirModalLimpiarDuplicados = abrirModalLimpiarDuplicados;
