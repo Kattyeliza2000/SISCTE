@@ -1,8 +1,6 @@
 /* ══════════════════════════════════════════════════════════
-   PORTAL SISCTE — app.js  v4.2
-   FIX PRINCIPAL: Comprobante PDF se sube a Google Drive
-   (carpeta COMPROBANTES) y se envía el link en el correo.
-   Así el usuario puede descargar su PDF directamente.
+   PORTAL SISCTE — app.js  v4.3
+   Auth: solo Google. Sin registro ni login por email.
 ══════════════════════════════════════════════════════════ */
 
 const FIREBASE_CONFIG = {
@@ -26,10 +24,7 @@ const GDRIVE_CONFIG = {
   scope: 'https://www.googleapis.com/auth/drive'
 };
 
-/* Carpeta raíz de archivos Excel por área */
-const GDRIVE_CARPETA_GENERAL = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
-
-/* ★ Carpeta dedicada para comprobantes PDF ★ */
+const GDRIVE_CARPETA_GENERAL      = '13LoEmlvtaspZQp6Y7wcEs2Qdhx4ZK1hw';
 const GDRIVE_CARPETA_COMPROBANTES = '1d7e6IlL7id7blOzn4XzWUqoRrsjXbj16';
 
 const ADMIN_EMAILS = [
@@ -69,9 +64,7 @@ async function initFirebase() {
     const { getFirestore, collection, addDoc, getDocs, orderBy, query, doc, getDoc }
       = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-      getRedirectResult, signOut, onAuthStateChanged,
-      createUserWithEmailAndPassword, signInWithEmailAndPassword,
-      sendPasswordResetEmail, sendEmailVerification, updateProfile }
+      getRedirectResult, signOut, onAuthStateChanged }
       = await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js");
 
     const app = initializeApp(FIREBASE_CONFIG);
@@ -81,9 +74,7 @@ async function initFirebase() {
     window._fb = {
       collection, addDoc, getDocs, orderBy, query, doc, getDoc,
       GoogleAuthProvider, signInWithPopup, signInWithRedirect,
-      getRedirectResult, signOut, onAuthStateChanged,
-      createUserWithEmailAndPassword, signInWithEmailAndPassword,
-      sendPasswordResetEmail, sendEmailVerification, updateProfile
+      getRedirectResult, signOut, onAuthStateChanged
     };
 
     try {
@@ -114,7 +105,7 @@ async function initFirebase() {
 }
 
 /* ══════════════════════════════════
-   AUTH
+   AUTH — solo Google
 ══════════════════════════════════ */
 async function login() {
   try {
@@ -142,79 +133,6 @@ async function logout() {
   _driveTokenCache = null; _driveTokenExpiry = 0;
   try { await window._fb.signOut(auth); } catch(e) {}
 }
-
-async function loginEmail() {
-  await _firebaseReady;
-  const email = document.getElementById('login-email')?.value?.trim();
-  const pass  = document.getElementById('login-pass')?.value;
-  if (!email || !pass) { toast('Ingresa correo y contraseña','err'); return; }
-  try {
-    const cred = await window._fb.signInWithEmailAndPassword(auth, email, pass);
-    await cred.user.reload();
-    if (!cred.user.emailVerified) {
-      await window._fb.signOut(auth);
-      toast('Debes verificar tu correo antes de iniciar sesión.', 'err');
-      if (confirm('¿Deseas que te reenviemos el correo de verificación?')) {
-        try {
-          const t = await window._fb.signInWithEmailAndPassword(auth, email, pass);
-          await window._fb.sendEmailVerification(t.user);
-          await window._fb.signOut(auth);
-          toast('Correo de verificación reenviado ✓');
-        } catch(e2) { console.warn(e2); }
-      }
-    }
-  } catch(e) {
-    const msg = e.code === 'auth/invalid-credential' ? 'Correo o contraseña incorrectos'
-              : e.code === 'auth/user-not-found'     ? 'No existe una cuenta con ese correo'
-              : e.code === 'auth/wrong-password'     ? 'Contraseña incorrecta'
-              : 'Error: ' + e.message;
-    toast(msg, 'err');
-  }
-}
-
-async function registrarEmail() {
-  await _firebaseReady;
-  const nombre = document.getElementById('reg-nombre')?.value?.trim();
-  const email  = document.getElementById('reg-email')?.value?.trim();
-  const pass   = document.getElementById('reg-pass')?.value;
-  if (!nombre) { toast('Ingresa tu nombre completo','err'); return; }
-  if (!email)  { toast('Ingresa tu correo','err'); return; }
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { toast('Correo no válido','err'); return; }
-  if (!pass || pass.length < 6) { toast('La contraseña debe tener al menos 6 caracteres','err'); return; }
-  try {
-    const cred = await window._fb.createUserWithEmailAndPassword(auth, email, pass);
-    await window._fb.updateProfile(cred.user, { displayName: nombre });
-    await window._fb.sendEmailVerification(cred.user);
-    await window._fb.signOut(auth);
-    toast('✉️ Te enviamos un correo de verificación a ' + email);
-    document.getElementById('reg-nombre').value = '';
-    document.getElementById('reg-email').value  = '';
-    document.getElementById('reg-pass').value   = '';
-    window.switchTab('login');
-  } catch(e) {
-    const msg = e.code === 'auth/email-already-in-use' ? 'Ya existe una cuenta con ese correo'
-              : e.code === 'auth/invalid-email'        ? 'Correo no válido'
-              : e.code === 'auth/weak-password'        ? 'La contraseña es muy débil'
-              : 'Error: ' + e.message;
-    toast(msg, 'err');
-  }
-}
-
-async function olvidoContrasena() {
-  const email = document.getElementById('login-email')?.value?.trim();
-  if (!email) { toast('Ingresa primero tu correo','err'); return; }
-  try {
-    await window._fb.sendPasswordResetEmail(auth, email);
-    toast('Correo de recuperación enviado ✓');
-  } catch(e) { toast('No se encontró una cuenta con ese correo','err'); }
-}
-
-window.switchTab = function(tab) {
-  document.getElementById('panel-login').style.display    = tab==='login'    ? 'block' : 'none';
-  document.getElementById('panel-registro').style.display = tab==='registro' ? 'block' : 'none';
-  document.getElementById('tab-login').classList.toggle('active',    tab==='login');
-  document.getElementById('tab-registro').classList.toggle('active', tab==='registro');
-};
 
 const esAdmin = () =>
   usuario && ADMIN_EMAILS.map(x=>x.toLowerCase()).includes(usuario.email.toLowerCase());
@@ -359,9 +277,6 @@ document.addEventListener('DOMContentLoaded', async () => {
   await new Promise(r=>setTimeout(r,100));
 
   const map = {
-    'btn-login-email':    loginEmail,
-    'btn-registrar':      registrarEmail,
-    'btn-forgot':         olvidoContrasena,
     'btn-enviar':         enviarArchivo,
     'btn-filtrar':        aplicarFiltros,
     'btn-limpiar':        limpiarFiltros,
@@ -536,16 +451,11 @@ async function subirAGoogleDrive(archivo, onProgress){
 }
 
 /* ══════════════════════════════════
-   ★ SUBIR COMPROBANTE PDF A DRIVE ★
-   Convierte el data URL base64 → Blob
-   y sube a la carpeta COMPROBANTES.
-   Retorna el link público del PDF.
+   GOOGLE DRIVE — SUBIR COMPROBANTE PDF
 ══════════════════════════════════ */
 async function subirComprobantePDFaDrive(dataUrl, registro){
   try {
     const token = await obtenerTokenDrive();
-
-    // Convertir data URL a Blob
     const base64 = dataUrl.split(',')[1];
     const byteChars = atob(base64);
     const bytes = new Uint8Array(byteChars.length);
@@ -554,12 +464,7 @@ async function subirComprobantePDFaDrive(dataUrl, registro){
 
     const fecha = new Date().toISOString().slice(0,10);
     const nombre = `COMPROBANTE_${registro}_${fecha}.pdf`;
-
-    const metadata = {
-      name: nombre,
-      mimeType: 'application/pdf',
-      parents: [GDRIVE_CARPETA_COMPROBANTES]
-    };
+    const metadata = { name: nombre, mimeType: 'application/pdf', parents: [GDRIVE_CARPETA_COMPROBANTES] };
     const form = new FormData();
     form.append('metadata', new Blob([JSON.stringify(metadata)],{type:'application/json'}));
     form.append('file', blob, nombre);
@@ -571,7 +476,6 @@ async function subirComprobantePDFaDrive(dataUrl, registro){
     if(!res.ok) throw new Error('HTTP '+res.status);
     const data = await res.json();
 
-    // Hacer el PDF público (lectura)
     await fetch(`https://www.googleapis.com/drive/v3/files/${data.id}/permissions`,{
       method:'POST',
       headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'},
@@ -588,7 +492,7 @@ async function subirComprobantePDFaDrive(dataUrl, registro){
 }
 
 /* ══════════════════════════════════
-   ELIMINAR ARCHIVO DE DRIVE
+   GOOGLE DRIVE — ELIMINAR ARCHIVO
 ══════════════════════════════════ */
 async function eliminarArchivoDeGoogleDrive(fileId){
   try {
@@ -619,20 +523,16 @@ async function enviarArchivo(){
     const fechaTexto=ahora.toLocaleDateString('es-EC',{timeZone:'America/Guayaquil',day:'2-digit',month:'long',year:'numeric'});
     const horaTexto=ahora.toLocaleTimeString('es-EC',{timeZone:'America/Guayaquil',hour:'2-digit',minute:'2-digit',second:'2-digit'});
 
-    /* 1 — Subir Excel */
     setProgreso(10,'Subiendo Excel a Google Drive...');
     const storageURL=await subirAGoogleDrive(archivoSeleccionado,
       p=>setProgreso(10+Math.round(p*0.28),`Subiendo Excel... ${Math.round(p)}%`));
 
-    /* 2 — Subir Acta PDF */
     setProgreso(43,'Subiendo Acta PDF...');
     const actaURL=await subirAGoogleDrive(actaSeleccionada,
       p=>setProgreso(43+Math.round(p*0.18),`Subiendo Acta... ${Math.round(p)}%`));
 
-    /* 3 — Número de registro */
     const numRegistro='SISCTE-'+Date.now().toString(36).toUpperCase();
 
-    /* 4 — Generar PDF comprobante */
     setProgreso(65,'Generando comprobante PDF...');
     const comprobanteDataUrl = await generarComprobantePDFComoURL({
       nombre:    usuario.nombre,
@@ -648,14 +548,12 @@ async function enviarArchivo(){
       actaLink:  actaURL
     });
 
-    /* 5 — ★ Subir comprobante a carpeta COMPROBANTES en Drive ★ */
     setProgreso(73,'Subiendo comprobante PDF a Drive...');
     let comprobanteURL = null;
     if(comprobanteDataUrl){
       comprobanteURL = await subirComprobantePDFaDrive(comprobanteDataUrl, numRegistro);
     }
 
-    /* 6 — Detectar y eliminar duplicados en Firestore */
     setProgreso(85,'Registrando en Firestore...');
     const {where,deleteDoc,doc:docRef}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
     const qDup=window._fb.query(
@@ -675,12 +573,10 @@ async function enviarArchivo(){
     }
     const fueReemplazo=snapDup.docs.length>0;
 
-    /* 7 — Extraer driveFileId */
     let driveFileId=null;
     const m=storageURL?.match(/\/d\/([a-zA-Z0-9-_]+)\//);
     if(m) driveFileId=m[1];
 
-    /* 8 — Guardar en Firestore (incluye comprobanteURL) */
     await window._fb.addDoc(window._fb.collection(db,'entregas'),{
       uid:           usuario.uid,
       nombre:        usuario.nombre,
@@ -694,7 +590,7 @@ async function enviarArchivo(){
       metodo:        'google_drive',
       storageURL,
       actaURL,
-      comprobanteURL,   // ← link al PDF en la carpeta COMPROBANTES
+      comprobanteURL,
       driveFileId,
       detalle:       detalleVal,
       registro:      numRegistro,
@@ -706,7 +602,6 @@ async function enviarArchivo(){
     setProgreso(100, fueReemplazo?'¡Archivo reemplazado!':'¡Completado!');
     mostrarExito(areaVal,fechaTexto,horaTexto);
 
-    /* 9 — Enviar correos con el link real de Drive (no base64) */
     enviarCorreoNotificacion({
       nombre:         usuario.nombre,
       email:          usuario.email,
@@ -719,7 +614,7 @@ async function enviarArchivo(){
       registro:       numRegistro,
       driveLink:      storageURL,
       actaLink:       actaURL,
-      comprobanteUrl: comprobanteURL || ''   // ★ link corto y funcional
+      comprobanteUrl: comprobanteURL || ''
     });
 
     setTimeout(()=>ir('vista-exito'),500);
@@ -744,8 +639,6 @@ function mostrarExito(area,fecha,hora){
 
 /* ══════════════════════════════════
    GENERAR COMPROBANTE PDF
-   Diseño idéntico a la pantalla de
-   éxito que el usuario ve en la web.
 ══════════════════════════════════ */
 async function generarComprobantePDFComoURL(d){
   try {
@@ -760,7 +653,6 @@ async function generarComprobantePDFComoURL(d){
     const doc=new jsPDF({unit:'mm',format:'a4'});
     const W=210;
 
-    /* Header azul */
     doc.setFillColor(37,99,235);
     doc.rect(0,0,W,50,'F');
     doc.setTextColor(255,255,255);
@@ -771,14 +663,12 @@ async function generarComprobantePDFComoURL(d){
     doc.setFontSize(9);
     doc.text('Confirmación de entrega registrada exitosamente',W/2,38,{align:'center'});
 
-    /* Círculo check verde */
     doc.setFillColor(22,163,74);
     doc.circle(W/2,62,8,'F');
     doc.setTextColor(255,255,255);
     doc.setFontSize(14); doc.setFont('helvetica','bold');
     doc.text('✓',W/2,66,{align:'center'});
 
-    /* Título */
     doc.setTextColor(17,24,39);
     doc.setFontSize(16); doc.setFont('helvetica','bold');
     doc.text('¡Archivo registrado exitosamente!',W/2,78,{align:'center'});
@@ -786,7 +676,6 @@ async function generarComprobantePDFComoURL(d){
     doc.setTextColor(100,116,139);
     doc.text('Tu entrega fue guardada correctamente en el sistema SISCTE.',W/2,85,{align:'center'});
 
-    /* Tabla de datos */
     const campos=[
       ['ENVIADO POR', d.nombre],
       ['CORREO',      d.email],
@@ -810,7 +699,6 @@ async function generarComprobantePDFComoURL(d){
       y+=13;
     });
 
-    /* N° Registro destacado */
     y+=2;
     doc.setFillColor(241,245,249);
     doc.roundedRect(14,y,W-28,14,3,3,'F');
@@ -821,7 +709,6 @@ async function generarComprobantePDFComoURL(d){
     doc.setTextColor(26,58,107); doc.setFontSize(12); doc.setFont('helvetica','bold');
     doc.text(d.registro,70,y+9);
 
-    /* Nota aviso */
     y+=22;
     doc.setFillColor(255,251,235);
     doc.roundedRect(14,y,W-28,16,3,3,'F');
@@ -832,7 +719,6 @@ async function generarComprobantePDFComoURL(d){
     doc.setFont('helvetica','normal');
     doc.text('Tu archivo fue almacenado en Google Drive y el registro queda permanente.',20,y+12);
 
-    /* Footer */
     doc.setFillColor(37,99,235);
     doc.rect(0,275,W,22,'F');
     doc.setTextColor(255,255,255); doc.setFontSize(8); doc.setFont('helvetica','normal');
@@ -898,7 +784,7 @@ async function enviarCorreoUsuario(datos){
       registro:        datos.registro,
       drive_link:      datos.driveLink||'',
       acta_link:       datos.actaLink||'',
-      comprobante_url: datos.comprobanteUrl||''  // ★ link de Drive, corto y descargable
+      comprobante_url: datos.comprobanteUrl||''
     });
     toast('Correo de confirmación enviado ✓');
     console.log('✓ Correo usuario enviado');
@@ -1099,57 +985,101 @@ async function confirmarArchivar(mes,docs){
 function cerrarModalArchivado(){$('modal-archivado').style.display='none';}
 
 /* ══════════════════════════════════
-   LIMPIAR DUPLICADOS
+   ELIMINAR REGISTROS BD
 ══════════════════════════════════ */
 function abrirModalLimpiarDuplicados(){
-  $('limpieza-contenido').style.display='block'; $('limpieza-progreso').style.display='none';
-  $('check-confirmar').checked=false; $('btn-iniciar-limpieza').disabled=true;
+  $('limpieza-contenido').style.display='block';
+  $('limpieza-progreso').style.display='none';
+  $('check-confirmar').checked=false;
+  $('btn-iniciar-limpieza').disabled=true;
+  $('elim-preview-result').style.display='none';
+  $('elim-fecha-desde').value='';
+  // Fecha hasta = hoy por defecto
+  $('elim-fecha-hasta').value=new Date().toISOString().slice(0,10);
   $('modal-limpiar-duplicados').style.display='flex';
 }
 function cerrarModalLimpiarDuplicados(){$('modal-limpiar-duplicados').style.display='none';}
-window.verificarCheckLimpieza=function(){$('btn-iniciar-limpieza').disabled=!$('check-confirmar').checked;};
+
+window.verificarCheckLimpieza=function(){
+  $('btn-iniciar-limpieza').disabled=!$('check-confirmar').checked;
+};
+
+/* Obtiene registros dentro del rango seleccionado */
+async function _obtenerRegistrosEnRango(){
+  const fd=$('elim-fecha-desde').value;
+  const fh=$('elim-fecha-hasta').value;
+  const {where}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+  const snap=await window._fb.getDocs(window._fb.collection(db,'entregas'));
+  let entregas=snap.docs.map(d=>({id:d.id,...d.data()}));
+  if(fd) entregas=entregas.filter(d=>d.timestamp>=new Date(fd).toISOString());
+  if(fh){const h=new Date(fh);h.setHours(23,59,59,999);entregas=entregas.filter(d=>d.timestamp<=h.toISOString());}
+  return entregas;
+}
+
+window.previsualizarEliminacion=async function(){
+  const btn=$('btn-preview-eliminar');
+  btn.textContent='Consultando...'; btn.disabled=true;
+  try {
+    const registros=await _obtenerRegistrosEnRango();
+    const res=$('elim-preview-result');
+    res.style.display='block';
+    if(!registros.length){
+      res.style.background='#fff7ed'; res.style.borderColor='#fed7aa'; res.style.color='#c2410c';
+      res.textContent='⚠️ No se encontraron registros en ese rango de fechas.';
+    } else {
+      res.style.background='#f0fdf4'; res.style.borderColor='#bbf7d0'; res.style.color='#15803d';
+      res.textContent=`✓ Se eliminarán ${registros.length} registro${registros.length!==1?'s':''} de Firestore (los archivos en Drive no se tocan).`;
+    }
+  } catch(e){
+    toast('Error al consultar: '+e.message,'err');
+  } finally {
+    btn.textContent='Ver cuántos registros se borrarán'; btn.disabled=false;
+  }
+};
 
 async function iniciarLimpiezaDuplicados(){
-  $('limpieza-contenido').style.display='none'; $('limpieza-progreso').style.display='block';
+  $('limpieza-contenido').style.display='none';
+  $('limpieza-progreso').style.display='block';
   $('limpieza-resultados').innerHTML='';
   const log=msg=>{const el=$('limpieza-resultados');el.innerHTML+=msg+'\n';el.scrollTop=el.scrollHeight;};
   try {
-    log('🔍 Iniciando búsqueda de duplicados...\n');
-    const {where}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-    const snap=await window._fb.getDocs(window._fb.query(window._fb.collection(db,'entregas'),where('archivado','!=',true)));
-    const entregas=snap.docs.map(d=>({id:d.id,...d.data()}));
-    log(`✓ ${entregas.length} entregas cargadas\n`);
-    const grupos={};
-    entregas.forEach(e=>{const k=`${e.uid}|${e.nombreArchivo}|${e.area}`;if(!grupos[k])grupos[k]=[];grupos[k].push(e);});
-    let td=0,te=0;
-    for(const [,grupo] of Object.entries(grupos)){
-      if(grupo.length>1){
-        td+=grupo.length-1;
-        log(`\n📁 ${grupo[0].nombreArchivo} (${grupo.length} versiones)`);
-        grupo.sort((a,b)=>new Date(b.timestamp)-new Date(a.timestamp));
-        for(const di of grupo.slice(1)){
-          log(`  🗑️ Eliminando (${di.timestamp})...`);
-          const {deleteDoc,doc:dRef}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
-          await deleteDoc(dRef(db,'entregas',di.id));
-          if(di.driveFileId){try{await eliminarArchivoDeGoogleDrive(di.driveFileId);log(`    ✓ Eliminado de Drive`);te++;}catch(e){log(`    ⚠️ Drive: ${e.message}`);}}
-          else{log(`    ℹ️ Sin driveFileId`);te++;}
-        }
-      }
+    log('🔍 Obteniendo registros en el rango seleccionado...\n');
+    const entregas=await _obtenerRegistrosEnRango();
+    log(`✓ ${entregas.length} registros encontrados\n`);
+    if(!entregas.length){
+      log('ℹ️ No hay registros para eliminar en ese rango.');
+      $('limpieza-progreso-bar').style.width='100%';
+      $('limpieza-progreso-txt').textContent='Sin registros que eliminar';
+      setTimeout(()=>{cerrarModalLimpiarDuplicados();},2000);
+      return;
+    }
+    const {deleteDoc,doc:dRef}=await import("https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js");
+    let eliminados=0;
+    for(let i=0;i<entregas.length;i++){
+      const d=entregas[i];
+      const pct=Math.round(((i+1)/entregas.length)*100);
+      $('limpieza-progreso-bar').style.width=pct+'%';
+      $('limpieza-progreso-txt').textContent=`Eliminando ${i+1} de ${entregas.length}...`;
+      log(`  🗑️ ${d.nombreArchivo} · ${d.area||'—'} · ${d.fechaTexto||d.timestamp.slice(0,10)}`);
+      await deleteDoc(dRef(db,'entregas',d.id));
+      eliminados++;
+      await new Promise(r=>setTimeout(r,80));
     }
     $('limpieza-progreso-bar').style.width='100%';
-    $('limpieza-progreso-txt').textContent='✓ Limpieza completada';
-    log(`\n✅ Duplicados: ${td} | Eliminados: ${te}`);
-    setTimeout(()=>{cerrarModalLimpiarDuplicados();cargarAdmin();toast('Duplicados limpiados ✓');},2000);
-  } catch(e){log(`\n❌ Error: ${e.message}`);toast('Error: '+e.message,'err');}
+    $('limpieza-progreso-txt').textContent='✓ Eliminación completada';
+    log(`\n✅ ${eliminados} registro${eliminados!==1?'s':''} eliminado${eliminados!==1?'s':''} de Firestore.`);
+    log('ℹ️ Los archivos en Google Drive no fueron afectados.');
+    setTimeout(()=>{cerrarModalLimpiarDuplicados();cargarAdmin();toast(`${eliminados} registros eliminados ✓`);},2500);
+  } catch(e){
+    log(`\n❌ Error: ${e.message}`);
+    toast('Error: '+e.message,'err');
+  }
 }
 
 /* ══════════════════════════════════
    EXPONER AL HTML
 ══════════════════════════════════ */
 window.login                        = login;
-window.loginEmail                   = loginEmail;
-window.registrarEmail               = registrarEmail;
-window.olvidoContrasena             = olvidoContrasena;
 window.abrirSelectorArchivo         = abrirSelectorArchivo;
 window.abrirSelectorActa            = abrirSelectorActa;
 window.seleccionarActa              = seleccionarActa;
