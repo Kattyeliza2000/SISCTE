@@ -1,5 +1,5 @@
 /* ══════════════════════════════════════════════════════════
-   PORTAL SISCTE — app.js  v4.3
+   PORTAL SISCTE — app.js  v4.4
    Auth: solo Google. Sin registro ni login por email.
 ══════════════════════════════════════════════════════════ */
 
@@ -599,24 +599,31 @@ async function enviarArchivo(){
       timestamp:     ahora.toISOString()
     });
 
+    setProgreso(92, 'Enviando correos de notificación...');
+
+    // ── CORRECCIÓN: await + manejo de errores visible ──
+    try {
+      await enviarCorreoNotificacion({
+        nombre:         usuario.nombre,
+        email:          usuario.email,
+        area:           areaVal,
+        archivo:        archivoSeleccionado.name,
+        acta:           actaSeleccionada.name,
+        tamano:         formatSize(archivoSeleccionado.size),
+        fecha:          fechaTexto,
+        hora:           horaTexto,
+        registro:       numRegistro,
+        driveLink:      storageURL,
+        actaLink:       actaURL,
+        comprobanteUrl: comprobanteURL || ''
+      });
+    } catch(mailErr) {
+      console.error('❌ Error enviando correos:', mailErr);
+      toast('Archivo guardado, pero falló el envío del correo', 'err');
+    }
+
     setProgreso(100, fueReemplazo?'¡Archivo reemplazado!':'¡Completado!');
     mostrarExito(areaVal,fechaTexto,horaTexto);
-
-    enviarCorreoNotificacion({
-      nombre:         usuario.nombre,
-      email:          usuario.email,
-      area:           areaVal,
-      archivo:        archivoSeleccionado.name,
-      acta:           actaSeleccionada.name,
-      tamano:         formatSize(archivoSeleccionado.size),
-      fecha:          fechaTexto,
-      hora:           horaTexto,
-      registro:       numRegistro,
-      driveLink:      storageURL,
-      actaLink:       actaURL,
-      comprobanteUrl: comprobanteURL || ''
-    });
-
     setTimeout(()=>ir('vista-exito'),500);
 
   } catch(err){
@@ -735,7 +742,7 @@ async function generarComprobantePDFComoURL(d){
 }
 
 /* ══════════════════════════════════
-   EMAILJS
+   EMAILJS — INIT
 ══════════════════════════════════ */
 async function _initEmailJS(){
   if(!window.emailjs){
@@ -748,51 +755,92 @@ async function _initEmailJS(){
   }
 }
 
+/* ══════════════════════════════════
+   EMAILJS — CORREO ADMIN
+══════════════════════════════════ */
 async function enviarCorreoAdmin(datos){
   try {
     await _initEmailJS();
-    await emailjs.send(EMAILJS_CONFIG.serviceId,EMAILJS_CONFIG.templateIdAdmin,{
-      usuario_nombre: datos.nombre,
-      usuario_email:  datos.email,
-      area:           datos.area,
-      archivo:        datos.archivo,
-      acta:           datos.acta||'—',
-      tamano:         datos.tamano,
-      fecha:          datos.fecha,
-      hora:           datos.hora,
-      registro:       datos.registro,
-      link_archivo:   datos.driveLink||'',
-      link_acta:      datos.actaLink||'',
-      link_carpeta:   `https://drive.google.com/drive/folders/${GDRIVE_CARPETA_GENERAL}`
-    });
-    console.log('✓ Correo admin enviado');
-  } catch(e){ console.warn('EmailJS admin:',e); }
+    console.log('📧 Enviando correo admin...');
+    const result = await emailjs.send(
+      EMAILJS_CONFIG.serviceId,
+      EMAILJS_CONFIG.templateIdAdmin,
+      {
+        usuario_nombre: datos.nombre,
+        usuario_email:  datos.email,
+        area:           datos.area,
+        archivo:        datos.archivo,
+        acta:           datos.acta||'—',
+        tamano:         datos.tamano,
+        fecha:          datos.fecha,
+        hora:           datos.hora,
+        registro:       datos.registro,
+        link_archivo:   datos.driveLink||'',
+        link_acta:      datos.actaLink||'',
+        link_carpeta:   `https://drive.google.com/drive/folders/${GDRIVE_CARPETA_GENERAL}`,
+        comprobante_url: datos.comprobanteUrl||''
+      }
+    );
+    console.log('✓ Correo admin enviado — status:', result.status, result.text);
+  } catch(e){
+    console.error('❌ EmailJS admin falló:', e.status || '', e.text || e.message || e);
+    throw e; // re-lanzar para que Promise.allSettled lo registre
+  }
 }
 
+/* ══════════════════════════════════
+   EMAILJS — CORREO USUARIO
+══════════════════════════════════ */
 async function enviarCorreoUsuario(datos){
   try {
     await _initEmailJS();
-    await emailjs.send(EMAILJS_CONFIG.serviceId,EMAILJS_CONFIG.templateIdUsuario,{
-      to_email:        datos.email,
-      to_name:         datos.nombre,
-      area:            datos.area,
-      archivo:         datos.archivo,
-      acta:            datos.acta||'—',
-      tamano:          datos.tamano,
-      fecha:           datos.fecha,
-      hora:            datos.hora,
-      registro:        datos.registro,
-      drive_link:      datos.driveLink||'',
-      acta_link:       datos.actaLink||'',
-      comprobante_url: datos.comprobanteUrl||''
-    });
+    console.log('📧 Enviando correo a usuario:', datos.email);
+    const result = await emailjs.send(
+      EMAILJS_CONFIG.serviceId,
+      EMAILJS_CONFIG.templateIdUsuario,
+      {
+        to_email:        datos.email,
+        to_name:         datos.nombre,
+        area:            datos.area,
+        archivo:         datos.archivo,
+        acta:            datos.acta||'—',
+        tamano:          datos.tamano,
+        fecha:           datos.fecha,
+        hora:            datos.hora,
+        registro:        datos.registro,
+        drive_link:      datos.driveLink||'',
+        acta_link:       datos.actaLink||'',
+        comprobante_url: datos.comprobanteUrl||''
+      }
+    );
+    console.log('✓ Correo usuario enviado — status:', result.status, result.text);
     toast('Correo de confirmación enviado ✓');
-    console.log('✓ Correo usuario enviado');
-  } catch(e){ console.warn('EmailJS usuario:',e); }
+  } catch(e){
+    console.error('❌ EmailJS usuario falló:', e.status || '', e.text || e.message || e);
+    throw e; // re-lanzar para que Promise.allSettled lo registre
+  }
 }
 
+/* ══════════════════════════════════
+   EMAILJS — ORQUESTADOR
+══════════════════════════════════ */
 async function enviarCorreoNotificacion(datos){
-  await Promise.allSettled([enviarCorreoAdmin(datos), enviarCorreoUsuario(datos)]);
+  const resultados = await Promise.allSettled([
+    enviarCorreoAdmin(datos),
+    enviarCorreoUsuario(datos)
+  ]);
+
+  const adminRes  = resultados[0];
+  const usuarioRes = resultados[1];
+
+  if(adminRes.status === 'rejected'){
+    console.error('❌ Correo ADMIN no enviado:', adminRes.reason);
+  }
+  if(usuarioRes.status === 'rejected'){
+    console.error('❌ Correo USUARIO no enviado:', usuarioRes.reason);
+    // Avisa al usuario si su propio correo falló
+    toast('⚠️ No se pudo enviar el correo de confirmación', 'err');
+  }
 }
 
 /* ══════════════════════════════════
@@ -994,7 +1042,6 @@ function abrirModalLimpiarDuplicados(){
   $('btn-iniciar-limpieza').disabled=true;
   $('elim-preview-result').style.display='none';
   $('elim-fecha-desde').value='';
-  // Fecha hasta = hoy por defecto
   $('elim-fecha-hasta').value=new Date().toISOString().slice(0,10);
   $('modal-limpiar-duplicados').style.display='flex';
 }
@@ -1004,7 +1051,6 @@ window.verificarCheckLimpieza=function(){
   $('btn-iniciar-limpieza').disabled=!$('check-confirmar').checked;
 };
 
-/* Obtiene registros dentro del rango seleccionado */
 async function _obtenerRegistrosEnRango(){
   const fd=$('elim-fecha-desde').value;
   const fh=$('elim-fecha-hasta').value;
