@@ -350,14 +350,42 @@ function seleccionarActa(f){
 }
 function actualizarBotonEnviar(){
   const btn=$('btn-enviar'); if(!btn)return;
-  const listo=!!(archivoSeleccionado&&actaSeleccionada);
+  const actaObligatoria = actaEsObligatoriaHoy();
+  const info = infoPlazoPorFecha();
+
+  // El botón se habilita cuando: hay Excel, y (hay Acta O el acta no es obligatoria hoy)
+  const listo = !!(archivoSeleccionado && (actaSeleccionada || !actaObligatoria));
   btn.disabled=!listo; btn.style.opacity=listo?'1':'0.45'; btn.style.cursor=listo?'pointer':'not-allowed';
+
+  // Badge de acta: rojo si tardío, naranja si aún en plazo
+  const actaLabel = $('acta-label-oblig');
+  if(actaLabel){
+    if(actaObligatoria){
+      actaLabel.textContent='OBLIGATORIO — Envío tardío';
+      actaLabel.style.background='#ef4444';
+    } else {
+      actaLabel.textContent='OPCIONAL hasta el día 10';
+      actaLabel.style.background='#d97706';
+    }
+  }
+
+  // Aviso de plazo bajo el dropzone del acta
+  const plazoEl = $('acta-plazo-info');
+  if(plazoEl) plazoEl.textContent = info.mensaje;
+
+  // Hint bajo el botón de enviar
   const hint=$('enviar-hint');
   if(hint){
-    if(!archivoSeleccionado&&!actaSeleccionada) hint.textContent='Sube el Excel y el Acta PDF para habilitar el envío';
-    else if(!archivoSeleccionado) hint.textContent='Falta el archivo Excel';
-    else if(!actaSeleccionada)    hint.textContent='Falta el Acta PDF (obligatorio)';
-    else hint.textContent='';
+    if(!archivoSeleccionado && !actaSeleccionada && actaObligatoria)
+      hint.textContent='Sube el Excel y el Acta PDF (retraso — acta obligatoria)';
+    else if(!archivoSeleccionado && !actaSeleccionada)
+      hint.textContent='Sube el Excel para habilitar el envío';
+    else if(!archivoSeleccionado)
+      hint.textContent='Falta el archivo Excel';
+    else if(!actaSeleccionada && actaObligatoria)
+      hint.textContent='⚠️ El Acta PDF es obligatoria — envío tardío (pasó el día 10)';
+    else
+      hint.textContent='';
   }
 }
 function formatSize(b){ return b>=1024*1024?(b/(1024*1024)).toFixed(2)+' MB':(b/1024).toFixed(1)+' KB'; }
@@ -506,9 +534,62 @@ async function eliminarArchivoDeGoogleDrive(fileId){
 /* ══════════════════════════════════
    ENVIAR ARCHIVO — FLUJO PRINCIPAL
 ══════════════════════════════════ */
+/* ══════════════════════════════════
+   LÓGICA: ¿Es obligatorio el Acta por retraso?
+
+   Regla de negocio:
+   - Al terminar cada mes, el personal tiene 10 días hábiles del mes siguiente
+     para subir su reporte mensual SIN acta.
+   - A partir del día 11 del mes en curso, el envío se considera TARDÍO
+     y el Acta PDF es OBLIGATORIA como justificación.
+
+   Ejemplo:
+     Reporte de marzo → plazo: 1 al 10 de abril (sin acta)
+                      → desde el 11 de abril: acta obligatoria
+══════════════════════════════════ */
+function actaEsObligatoriaHoy(){
+  const ahora = new Date();
+  return ahora.getDate() > 10;
+}
+
+function infoPlazoPorFecha(){
+  const ahora = new Date();
+  const dia   = ahora.getDate();
+
+  // Mes del reporte = mes anterior al mes actual
+  const mesPasado = new Date(ahora.getFullYear(), ahora.getMonth() - 1, 1);
+  const nombreMesPasado = mesPasado.toLocaleDateString('es-EC', { month: 'long', year: 'numeric', timeZone: 'America/Guayaquil' });
+
+  if(dia <= 10){
+    const diasRestantes = 10 - dia;
+    return {
+      tardio: false,
+      mesReporte: nombreMesPasado,
+      mensaje: diasRestantes === 0
+        ? `Hoy vence el plazo para el reporte de ${nombreMesPasado}`
+        : `Envío del reporte de ${nombreMesPasado} · te quedan ${diasRestantes} día${diasRestantes!==1?'s':''} sin acta`
+    };
+  } else {
+    const diasRetraso = dia - 10;
+    return {
+      tardio: true,
+      mesReporte: nombreMesPasado,
+      mensaje: `Envío tardío del reporte de ${nombreMesPasado} · ${diasRetraso} día${diasRetraso!==1?'s':''} de retraso — Acta obligatoria`
+    };
+  }
+}
+
 async function enviarArchivo(){
   if(!archivoSeleccionado){toast('Selecciona un archivo Excel primero','err');return;}
-  if(!actaSeleccionada){toast('El Acta PDF es obligatoria','err');return;}
+
+  // Acta obligatoria SIEMPRE si hay retraso (pasó el día 10 del mes)
+  const actaObligatoria = actaEsObligatoriaHoy();
+  if(actaObligatoria && !actaSeleccionada){
+    const _info = infoPlazoPorFecha();
+    toast(`⚠️ Envío tardío del reporte de ${_info.mesReporte} — el Acta PDF es obligatoria`,'err');
+    return;
+  }
+
   const areaVal=$('area-select').value;
   if(!areaVal){toast('Debes seleccionar tu área','err');return;}
   const detalleVal=($('detalle-envio')?.value||'').trim();
@@ -743,16 +824,14 @@ async function generarComprobantePDFComoURL(d){
 
 /* ══════════════════════════════════
    EMAILJS — INIT
+   EmailJS se carga en index.html ANTES de app.js (script clásico, no module).
+   Aquí solo verificamos que esté disponible globalmente.
 ══════════════════════════════════ */
 async function _initEmailJS(){
   if(!window.emailjs){
-    await new Promise((res,rej)=>{
-      const s=document.createElement('script');
-      s.src='https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js';
-      s.onload=res; s.onerror=rej; document.head.appendChild(s);
-    });
-    emailjs.init(EMAILJS_CONFIG.publicKey);
+    throw new Error('EmailJS no disponible — verifica que el <script> de emailjs esté en index.html antes de app.js');
   }
+  // ya fue inicializado en index.html — nada más que hacer
 }
 
 /* ══════════════════════════════════
