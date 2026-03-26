@@ -172,11 +172,11 @@
           </div>
         </div>
 
-        <!-- Acta PDF (obligatorio) -->
+        <!-- Acta PDF (obligatoria por retraso si pasa el día 10 del mes) -->
         <div class="form-field">
           <label class="form-label">
             Acta PDF
-            <span style="background:#ef4444;color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;">OBLIGATORIO</span>
+            <span id="acta-label-oblig" style="color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:4px;margin-left:6px;background:#d97706;">OPCIONAL (obligatorio después del día 10)</span>
           </label>
           <div id="acta-dropzone" class="dropzone" onclick="abrirSelectorActa()"
                ondragover="event.preventDefault();this.classList.add('dz-over')"
@@ -189,6 +189,7 @@
             <span class="dz-hint">Solo .pdf</span>
           </div>
           <input type="file" id="acta-input" accept=".pdf" style="display:none" onchange="if(this.files[0])seleccionarActa(this.files[0])">
+          <p id="acta-plazo-info" style="font-size:11px;color:#92400e;margin-top:7px;font-weight:500;"></p>
 
           <div id="acta-preview" class="file-preview" style="display:none">
             <div class="fp-ico">
@@ -522,6 +523,20 @@
 </div>
 
 <div class="toast" id="toast"></div>
+
+<!-- EmailJS cargado como script CLÁSICO (no module) para que window.emailjs esté disponible globalmente -->
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+<script>
+  (function(){
+    if(window.emailjs){
+      emailjs.init({ publicKey: "gaScEoguCEcx7aFYT" });
+      console.log("✓ EmailJS inicializado correctamente");
+    } else {
+      console.error("❌ EmailJS no se pudo cargar");
+    }
+  })();
+</script>
+
 <script type="module" src="app.js"></script>
 </body>
 </html>
